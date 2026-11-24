@@ -84,7 +84,6 @@ async function runInventoryBatchAnalysis(tenantId, productIds = null) {
   // 4. Load LangChain modules dynamically for CommonJS compatibility
   const { ChatPromptTemplate } = await import('@langchain/core/prompts');
   const { z } = await import('zod');
-  const chatModel = await getChatModel();
 
   // 5. Define the strict Zod schema for each product's analysis
   const productAnalysisSchema = z.object({
@@ -126,11 +125,6 @@ Current Description: {description}`
     ]
   ]);
 
-  // 7. Construct the LangChain Pipeline using .pipe()
-  const batchChain = prompt.pipe(
-    chatModel.withStructuredOutput(productAnalysisSchema)
-  );
-
   // 8. Format inputs for LangChain's .batch() method
   const batchInputs = products.map((p) => ({
     name: p.name,
@@ -144,16 +138,51 @@ Current Description: {description}`
   }));
 
   // 9. Execute LangChain .batch() with concurrency control and fault tolerance
-  console.log(`🦜 [LangChain] Starting .batch() execution for ${batchInputs.length} inventory products (maxConcurrency: 2)...`);
+  let batchResults = [];
   const startTime = Date.now();
+  let durationSeconds = '0.00';
 
-  const batchResults = await batchChain.batch(batchInputs, {
-    maxConcurrency: 2, // Concurrency limit to prevent local CPU overload on Ollama
-    returnExceptions: true // Protects against single-item LLM failures without aborting the batch
-  });
+  try {
+    const chatModel = await getChatModel();
+    const batchChain = prompt.pipe(
+      chatModel.withStructuredOutput(productAnalysisSchema)
+    );
+    console.log(`🦜 [LangChain] Starting .batch() execution for ${batchInputs.length} inventory products (maxConcurrency: 2)...`);
+    batchResults = await batchChain.batch(batchInputs, {
+      maxConcurrency: 2,
+      returnExceptions: true
+    });
+    durationSeconds = ((Date.now() - startTime) / 1000).toFixed(2);
+    console.log(`✅ [LangChain] .batch() completed ${batchResults.length} items in ${durationSeconds}s`);
+  } catch (err) {
+    console.warn('⚠️ [LangChain] LLM unreachable, executing rule-based catalog audit fallback:', err.message);
+    durationSeconds = ((Date.now() - startTime) / 1000).toFixed(2);
+    batchResults = products.map((p) => {
+      const lower = `${p.name} ${p.description || ''}`.toLowerCase();
+      let cat = p.category || 'electronics';
+      if (/desk|chair|table|shelf|cabinet|sofa/i.test(lower)) cat = 'furniture';
+      else if (/pen|paper|folder|notebook|stapler|file|binder/i.test(lower)) cat = 'office-supplies';
+      else if (/server|cpu|ram|ssd|gpu|monitor|keyboard|mouse|laptop|computer/i.test(lower)) cat = 'it-hardware';
+      else if (/steel|plastic|copper|wood|aluminum|fabric|cotton|sheet|rod/i.test(lower)) cat = 'raw-materials';
 
-  const durationSeconds = ((Date.now() - startTime) / 1000).toFixed(2);
-  console.log(`✅ [LangChain] .batch() completed ${batchResults.length} items in ${durationSeconds}s`);
+      const stockStatus = p.quantity <= p.reorder_level
+        ? 'Reorder Required'
+        : (p.quantity > p.reorder_level * 5 ? 'Overstocked' : 'Healthy');
+      const rec = stockStatus === 'Reorder Required'
+        ? `Current stock (${p.quantity}) is below reorder threshold (${p.reorder_level}). Reorder ${(p.reorder_level * 2) - p.quantity} units.`
+        : (stockStatus === 'Overstocked'
+          ? `Stock (${p.quantity}) exceeds threshold by 5x. Monitor holding costs.`
+          : 'Stock is within optimal inventory levels.');
+
+      return {
+        suggested_name: p.name.split(' ').map(w => w ? w.charAt(0).toUpperCase() + w.slice(1) : '').join(' '),
+        suggested_category: cat,
+        catalog_description: p.description && p.description.trim().length > 5 ? p.description : `Commercial ${p.name.toLowerCase()} catalog item.`,
+        stock_status: stockStatus,
+        recommendation: rec
+      };
+    });
+  }
 
   // 10. Process batch results with individual failure tracking
   let successfulAnalysisCount = 0;

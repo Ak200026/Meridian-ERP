@@ -68,83 +68,180 @@ Instructions:
     ];
 
     const startTime = Date.now();
-
-    // Turn 1: Send user message + tools to Ollama
-    const firstTurnRes = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: OLLAMA_MODEL,
-        messages,
-        tools,
-        stream: false,
-        keep_alive: '1h',
-        options: {
-          temperature: 0.2,
-          num_ctx: 2048,
-          num_predict: 250
-        }
-      })
-    });
-
-    if (!firstTurnRes.ok) {
-      throw new Error(`Ollama returned HTTP ${firstTurnRes.status}: ${firstTurnRes.statusText} `);
-    }
-
-    const firstData = await firstTurnRes.json();
-    let assistantMsg = firstData.message;
+    let assistantMsg = null;
     let toolSummary = null;
 
-    // Turn 2: Check if model invoked any tool calls
-    if (assistantMsg?.tool_calls && assistantMsg.tool_calls.length > 0) {
-      const toolNames = [];
-      const toolMessages = [];
-
-      for (const call of assistantMsg.tool_calls) {
-        const fnName = call.function?.name;
-        const args = call.function?.arguments || {};
-        toolNames.push(fnName);
-
-        // Execute the tool against PostgreSQL with user context (RBAC + Tenant Isolation)
-        const toolResult = await executeTool(fnName, args, req.user);
-
-        toolMessages.push({
-          role: 'tool',
-          content: JSON.stringify(toolResult)
+    // Check if Groq Cloud API Key is configured
+    if (process.env.GROQ_API_KEY) {
+      try {
+        const groqModel = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+        const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: groqModel,
+            messages,
+            tools,
+            temperature: 0.2
+          })
         });
-      }
 
-      toolSummary = `🛠️ Tool called: ${toolNames.join(', ')} `;
+        if (groqRes.ok) {
+          const groqData = await groqRes.json();
+          const choice = groqData.choices?.[0]?.message;
+          assistantMsg = choice;
 
-      // Send tool results back to Ollama to generate final answer
-      const followUpMessages = [
-        ...messages,
-        assistantMsg,
-        ...toolMessages
-      ];
+          if (choice?.tool_calls && choice.tool_calls.length > 0) {
+            const toolNames = [];
+            const toolMessages = [];
 
-      const secondTurnRes = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: OLLAMA_MODEL,
-          messages: followUpMessages,
-          stream: false,
-          keep_alive: '1h',
-          options: {
-            temperature: 0.2,
-            num_ctx: 2048,
-            num_predict: 250
+            for (const call of choice.tool_calls) {
+              const fnName = call.function?.name;
+              let args = {};
+              try {
+                args = typeof call.function?.arguments === 'string'
+                  ? JSON.parse(call.function.arguments)
+                  : (call.function?.arguments || {});
+              } catch (_) {}
+
+              toolNames.push(fnName);
+              const toolResult = await executeTool(fnName, args, req.user);
+              toolMessages.push({
+                role: 'tool',
+                tool_call_id: call.id,
+                name: fnName,
+                content: JSON.stringify(toolResult)
+              });
+            }
+
+            toolSummary = `🛠️ Tool called: ${toolNames.join(', ')}`;
+            const followUpMessages = [...messages, choice, ...toolMessages];
+
+            const secondGroqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                model: groqModel,
+                messages: followUpMessages,
+                temperature: 0.2
+              })
+            });
+
+            if (secondGroqRes.ok) {
+              const secondData = await secondGroqRes.json();
+              if (secondData.choices?.[0]?.message?.content) {
+                assistantMsg = secondData.choices[0].message;
+              }
+            }
           }
-        })
-      });
-
-      if (secondTurnRes.ok) {
-        const secondData = await secondTurnRes.json();
-        if (secondData.message?.content?.trim()) {
-          assistantMsg = secondData.message;
         }
+      } catch (groqErr) {
+        console.warn('⚠️ Groq Cloud chat error:', groqErr.message);
       }
+    }
+
+    // If Groq is not used or failed, try local Ollama
+    if (!assistantMsg) {
+      try {
+        const firstTurnRes = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: OLLAMA_MODEL,
+            messages,
+            tools,
+            stream: false,
+            keep_alive: '1h',
+            options: {
+              temperature: 0.2,
+              num_ctx: 2048,
+              num_predict: 250
+            }
+          }),
+          signal: AbortSignal.timeout(6000)
+        });
+
+        if (firstTurnRes.ok) {
+          const firstData = await firstTurnRes.json();
+          assistantMsg = firstData.message;
+
+          if (assistantMsg?.tool_calls && assistantMsg.tool_calls.length > 0) {
+            const toolNames = [];
+            const toolMessages = [];
+
+            for (const call of assistantMsg.tool_calls) {
+              const fnName = call.function?.name;
+              const args = call.function?.arguments || {};
+              toolNames.push(fnName);
+
+              const toolResult = await executeTool(fnName, args, req.user);
+              toolMessages.push({
+                role: 'tool',
+                content: JSON.stringify(toolResult)
+              });
+            }
+
+            toolSummary = `🛠️ Tool called: ${toolNames.join(', ')}`;
+            const followUpMessages = [...messages, assistantMsg, ...toolMessages];
+
+            const secondTurnRes = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model: OLLAMA_MODEL,
+                messages: followUpMessages,
+                stream: false,
+                keep_alive: '1h',
+                options: {
+                  temperature: 0.2,
+                  num_ctx: 2048,
+                  num_predict: 250
+                }
+              }),
+              signal: AbortSignal.timeout(6000)
+            });
+
+            if (secondTurnRes.ok) {
+              const secondData = await secondTurnRes.json();
+              if (secondData.message?.content?.trim()) {
+                assistantMsg = secondData.message;
+              }
+            }
+          }
+        }
+      } catch (ollamaErr) {
+        console.warn('⚠️ Ollama chat error:', ollamaErr.message);
+      }
+    }
+
+    // Direct Database Tool Fallback if no LLM is connected
+    if (!assistantMsg) {
+      const lowerMsg = message.toLowerCase();
+      let fallbackText = "I am MeriBot, your AI Assistant for Meridian ERP. I'm connected to your live Supabase database.";
+
+      if (lowerMsg.includes('stock') || lowerMsg.includes('reorder') || lowerMsg.includes('inventory')) {
+        const stockData = await executeTool('check_low_stock', {}, req.user);
+        if (stockData.low_stock_products?.length > 0) {
+          fallbackText = `⚠️ **Low Stock Alert**: You have ${stockData.low_stock_products.length} product(s) that need reordering:\n\n` +
+            stockData.low_stock_products.map(p => `• **${p.name}** (${p.sku}): ${p.quantity} ${p.unit} in stock (Reorder level: ${p.reorder_level})`).join('\n');
+        } else {
+          fallbackText = '✅ **Inventory Status**: All products currently meet or exceed their reorder thresholds.';
+        }
+      } else if (lowerMsg.includes('sales') || lowerMsg.includes('revenue')) {
+        const salesData = await executeTool('get_sales_summary', {}, req.user);
+        fallbackText = `📊 **Sales Summary**: Monthly revenue is **₹${salesData.monthly_revenue?.toLocaleString('en-IN') || 0}** across **${salesData.order_count || 0}** orders.`;
+      } else {
+        fallbackText += ` You can query products, check low stock, review sales revenue, or add your free Groq API key in Render to unlock full conversational reasoning.`;
+      }
+
+      assistantMsg = { content: fallbackText };
+      toolSummary = '⚡ Direct PostgreSQL Tool Query (Fallback)';
     }
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
