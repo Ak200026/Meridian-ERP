@@ -391,19 +391,56 @@ Instructions:
     // LangChain LCEL Pipeline: Prompt -> ChatOllama -> StringOutputParser using .pipe()
     const stringChain = prompt.pipe(chatModel).pipe(new StringOutputParser());
 
-    // 3. Stream chunks live via chain.stream()
-    const stream = await stringChain.stream({
-      question: message,
-      database_context: toolContextText ? `DATABASE CONTEXT:\n${toolContextText}` : '',
-      user_name: userName,
-      user_role: userRole,
-      tenant_id: tenantId.substring(0, 8)
-    });
+    // 3. Stream chunks live via chain.stream() with smart database fallback
+    let streamSucceeded = false;
 
-    for await (const chunk of stream) {
-      if (chunk) {
-        res.write(`data: ${JSON.stringify({ type: 'chunk', chunk })}\n\n`);
+    try {
+      const stream = await stringChain.stream({
+        question: message,
+        database_context: toolContextText ? `DATABASE CONTEXT:\n${toolContextText}` : '',
+        user_name: userName,
+        user_role: userRole,
+        tenant_id: tenantId.substring(0, 8)
+      });
+
+      for await (const chunk of stream) {
+        if (chunk) {
+          streamSucceeded = true;
+          res.write(`data: ${JSON.stringify({ type: 'chunk', chunk })}\n\n`);
+        }
       }
+    } catch (streamErr) {
+      console.warn('⚠️ [LangChain] Stream LLM unavailable, streaming database answer fallback:', streamErr.message);
+    }
+
+    if (!streamSucceeded) {
+      let directReply = '';
+      const lower = message.toLowerCase();
+
+      if (lower.includes('how many') || lower.includes('count') || lower.includes('inventory') || lower.includes('item') || lower.includes('total')) {
+        const overview = await executeTool('get_inventory_overview', {}, req.user);
+        directReply = `📊 **Warehouse Inventory Status**:\n\n` +
+          `• **Unique Product SKUs:** ${overview.total_products || 0}\n` +
+          `• **Total Units in Stock:** ${overview.total_quantity || 0}\n` +
+          `• **Total Inventory Value:** ₹${(overview.total_inventory_value || 0).toLocaleString('en-IN')}\n\n` +
+          `Your inventory data was retrieved directly from your PostgreSQL tenant database.`;
+      } else if (lower.includes('low stock') || lower.includes('reorder')) {
+        const stockData = await executeTool('check_low_stock', {}, req.user);
+        if (stockData.low_stock_products?.length > 0) {
+          directReply = `⚠️ **Low Stock Alert**: You have ${stockData.low_stock_products.length} product(s) needing replenishment:\n\n` +
+            stockData.low_stock_products.map(p => `• **${p.name}** (${p.sku}): ${p.quantity} units remaining (Threshold: ${p.reorder_level})`).join('\n');
+        } else {
+          directReply = '✅ **Inventory Healthy**: All product quantities are currently above their reorder thresholds.';
+        }
+      } else if (lower.includes('sales') || lower.includes('revenue') || lower.includes('order')) {
+        const salesData = await executeTool('get_sales_summary', {}, req.user);
+        directReply = `📈 **Sales Performance**: Monthly revenue is **₹${(salesData.monthly_revenue || 0).toLocaleString('en-IN')}** across **${salesData.order_count || 0}** orders.`;
+      } else {
+        directReply = `Hello ${userName}! I am MeriBot, connected to your organization's database. Ask me about stock levels, low stock warnings, sales revenue, or product details.`;
+      }
+
+      res.write(`data: ${JSON.stringify({ type: 'chunk', chunk: directReply })}\n\n`);
+      toolSummary = '⚡ Direct PostgreSQL Tenant Query';
     }
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);

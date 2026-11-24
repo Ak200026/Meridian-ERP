@@ -578,7 +578,9 @@ const sendMessage = async () => {
 
   try {
     const token = localStorage.getItem('token');
-    const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
+    let apiBase = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1').trim();
+    if (apiBase.endsWith('/')) apiBase = apiBase.slice(0, -1);
+    if (!apiBase.endsWith('/api/v1')) apiBase = `${apiBase}/api/v1`;
 
     // Real-Time Streaming via LangChain .stream() & .pipe()
     const response = await fetch(`${apiBase}/ai/stream-chat`, {

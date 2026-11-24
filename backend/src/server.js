@@ -56,12 +56,24 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // API ROUTES
 // Versioned enterprise REST endpoints under /api/v1
 // ============================================================
+// API ROUTES - Mounted at both /api/v1 and root prefixes for compatibility
 app.use('/api/v1/auth', authRoutes);
+app.use('/auth', authRoutes);
+
 app.use('/api/v1/dashboard', dashboardRoutes);
+app.use('/dashboard', dashboardRoutes);
+
 app.use('/api/v1/inventory', inventoryRoutes);
+app.use('/inventory', inventoryRoutes);
+
 app.use('/api/v1/sales', salesRoutes);
+app.use('/sales', salesRoutes);
+
 app.use('/api/v1/purchase', purchaseRoutes);
+app.use('/purchase', purchaseRoutes);
+
 app.use('/api/v1/ai', aiRoutes);
+app.use('/ai', aiRoutes);
 
 // Health check endpoint (for DevOps monitoring & load balancers)
 app.get('/health', (req, res) => {
