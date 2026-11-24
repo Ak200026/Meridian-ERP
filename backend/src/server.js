@@ -36,8 +36,8 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
 
 app.use(cors({
   origin: (origin, callback) => {
-    // In development or non-browser client tools (curl, server-to-server), allow
-    if (!origin || allowedOrigins.includes(origin) || process.env.NODE_ENV !== 'production') {
+    // In development or if allowedOrigins includes '*' or matches domain, allow
+    if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin) || process.env.NODE_ENV !== 'production') {
       callback(null, true);
     } else {
       callback(new Error(`CORS policy violation: Origin "${origin}" is not authorized.`));
