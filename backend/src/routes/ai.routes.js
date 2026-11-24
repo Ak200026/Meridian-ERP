@@ -301,51 +301,106 @@ router.post('/stream-chat', verifyToken, async (req, res) => {
     let toolContextText = '';
     let toolSummary = null;
 
-    try {
-      const toolCheckRes = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: OLLAMA_MODEL,
-          messages: [
-            {
-              role: 'system',
-              content: `You are MeriBot AI for Meridian ERP. Active user: ${userName} (${userRole}), Tenant: ${tenantId.substring(0, 8)}. Decide if a tool call is needed to answer the user query.`
-            },
-            { role: 'user', content: message }
-          ],
-          tools,
-          stream: false,
-          keep_alive: '1h',
-          options: { temperature: 0.1, num_predict: 150 }
-        })
-      });
+    if (process.env.GROQ_API_KEY) {
+      try {
+        const groqModel = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+        const groqCheckRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: groqModel,
+            messages: [
+              {
+                role: 'system',
+                content: `You are MeriBot AI for Meridian ERP. Active user: ${userName} (${userRole}), Tenant: ${tenantId.substring(0, 8)}. Decide if a tool call is needed to answer the user query.`
+              },
+              { role: 'user', content: message }
+            ],
+            tools,
+            temperature: 0.1
+          }),
+          signal: AbortSignal.timeout(3000)
+        });
 
-      if (toolCheckRes.ok) {
-        const checkData = await toolCheckRes.json();
-        const toolCalls = checkData.message?.tool_calls;
+        if (groqCheckRes.ok) {
+          const checkData = await groqCheckRes.json();
+          const toolCalls = checkData.choices?.[0]?.message?.tool_calls;
 
-        if (toolCalls && toolCalls.length > 0) {
-          const toolNames = [];
-          const toolResults = [];
+          if (toolCalls && toolCalls.length > 0) {
+            const toolNames = [];
+            const toolResults = [];
 
-          for (const call of toolCalls) {
-            const fnName = call.function?.name;
-            const args = call.function?.arguments || {};
-            toolNames.push(fnName);
-            const resData = await executeTool(fnName, args, req.user);
-            toolResults.push({ tool: fnName, result: resData });
+            for (const call of toolCalls) {
+              const fnName = call.function?.name;
+              let args = {};
+              try {
+                args = typeof call.function?.arguments === 'string'
+                  ? JSON.parse(call.function.arguments)
+                  : (call.function?.arguments || {});
+              } catch (_) {}
+
+              toolNames.push(fnName);
+              const resData = await executeTool(fnName, args, req.user);
+              toolResults.push({ tool: fnName, result: resData });
+            }
+
+            toolSummary = `🛠️ Tool called: ${toolNames.join(', ')}`;
+            res.write(`data: ${JSON.stringify({ type: 'tool', summary: toolSummary })}\n\n`);
+            toolContextText = `Live ERP Database Query Results:\n${JSON.stringify(toolResults, null, 2)}`;
           }
-
-          toolSummary = `🛠️ Tool called: ${toolNames.join(', ')}`;
-          // Inform frontend of tool execution immediately
-          res.write(`data: ${JSON.stringify({ type: 'tool', summary: toolSummary })}\n\n`);
-
-          toolContextText = `Live ERP Database Query Results:\n${JSON.stringify(toolResults, null, 2)}`;
         }
+      } catch (groqToolErr) {
+        console.warn('Groq tool check error:', groqToolErr.message);
       }
-    } catch (toolErr) {
-      console.warn('Tool check error (falling back to direct LangChain stream):', toolErr.message);
+    } else {
+      try {
+        const toolCheckRes = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: OLLAMA_MODEL,
+            messages: [
+              {
+                role: 'system',
+                content: `You are MeriBot AI for Meridian ERP. Active user: ${userName} (${userRole}), Tenant: ${tenantId.substring(0, 8)}. Decide if a tool call is needed to answer the user query.`
+              },
+              { role: 'user', content: message }
+            ],
+            tools,
+            stream: false,
+            keep_alive: '1h',
+            options: { temperature: 0.1, num_predict: 150 }
+          }),
+          signal: AbortSignal.timeout(1000)
+        });
+
+        if (toolCheckRes.ok) {
+          const checkData = await toolCheckRes.json();
+          const toolCalls = checkData.message?.tool_calls;
+
+          if (toolCalls && toolCalls.length > 0) {
+            const toolNames = [];
+            const toolResults = [];
+
+            for (const call of toolCalls) {
+              const fnName = call.function?.name;
+              const args = call.function?.arguments || {};
+              toolNames.push(fnName);
+              const resData = await executeTool(fnName, args, req.user);
+              toolResults.push({ tool: fnName, result: resData });
+            }
+
+            toolSummary = `🛠️ Tool called: ${toolNames.join(', ')}`;
+            res.write(`data: ${JSON.stringify({ type: 'tool', summary: toolSummary })}\n\n`);
+            toolContextText = `Live ERP Database Query Results:\n${JSON.stringify(toolResults, null, 2)}`;
+          }
+        }
+      } catch (toolErr) {
+        // Local Ollama offline, skip gracefully
+      }
     }
 
     // 2. Setup LangChain Streaming Pipeline using .pipe()
