@@ -55,7 +55,8 @@ Instructions:
 2. When asked to create or add a product, CALL the add_new_product tool with the required arguments.
     3. When you receive tool results, provide a clear, friendly, and concise answer based on the tool's data.
     4. If a tool returns a Permission Denied or Access Denied error, politely explain to the user why their role cannot perform that action.
-5. For general business questions that do not require database data, answer directly with practical advice.`;
+5. For general business questions that do not require database data, answer directly with practical advice.
+6. NEVER output SQL code, database queries, or programming tutorials. Always answer directly in natural, polished business English.`;
 
     // Format conversation history
     const messages = [
@@ -411,28 +412,26 @@ router.post('/stream-chat', verifyToken, async (req, res) => {
         if (searchRes.products?.length > 0) {
           toolSummary = `🔍 Live Database Match: ${searchRes.products.map(p => p.name).join(', ')}`;
           res.write(`data: ${JSON.stringify({ type: 'tool', summary: toolSummary })}\n\n`);
-          toolContextText = `Live ERP Products found in your warehouse:\n` +
-            JSON.stringify(searchRes.products.map(p => ({
-              name: p.name,
-              sku: p.sku,
-              category: p.category,
-              quantity: p.quantity,
-              unit: p.unit,
-              unit_price: p.unit_price,
-              reorder_level: p.reorder_level,
-              description: p.description
-            })), null, 2);
+          toolContextText = `VERIFIED LIVE WAREHOUSE INVENTORY FACTS:\n` +
+            searchRes.products.map(p =>
+              `• Product: "${p.name}" (SKU: ${p.sku}) | Unit Price: ₹${parseFloat(p.unit_price).toLocaleString('en-IN')} | Stock Available: ${p.quantity} ${p.unit || 'pcs'} | Category: ${p.category} | Reorder Threshold: ${p.reorder_level}`
+            ).join('\n');
         } else {
           const overview = await executeTool('get_inventory_overview', {}, req.user);
           toolSummary = `📦 Live Inventory Overview`;
           res.write(`data: ${JSON.stringify({ type: 'tool', summary: toolSummary })}\n\n`);
-          toolContextText = `Live Warehouse Inventory Status:\n` + JSON.stringify(overview, null, 2);
+          toolContextText = `LIVE WAREHOUSE SUMMARY:\n` +
+            `• Total Unique Products: ${overview.total_products || 0}\n` +
+            `• Total Warehouse Units: ${overview.total_quantity || 0}\n` +
+            `• Total Catalog Valuation: ₹${(overview.total_inventory_value || 0).toLocaleString('en-IN')}`;
         }
       } else if (/sales|revenue|order|customer|income|earn/i.test(lower)) {
         const salesRes = await executeTool('get_sales_summary', {}, req.user);
         toolSummary = `📊 Live Sales Data`;
         res.write(`data: ${JSON.stringify({ type: 'tool', summary: toolSummary })}\n\n`);
-        toolContextText = `Live ERP Sales Data:\n` + JSON.stringify(salesRes, null, 2);
+        toolContextText = `LIVE SALES METRICS:\n` +
+          `• Monthly Revenue: ₹${(salesRes.monthly_revenue || 0).toLocaleString('en-IN')}\n` +
+          `• Total Orders: ${salesRes.order_count || 0}`;
       }
     }
 
@@ -441,17 +440,18 @@ router.post('/stream-chat', verifyToken, async (req, res) => {
     const { StringOutputParser } = await import('@langchain/core/output_parsers');
     const chatModel = await getChatModel();
 
-    const systemPrompt = `You are MeriBot, an intelligent and helpful AI assistant for Meridian ERP.
-You are running locally via Ollama with real-time LangChain streaming.
-Current active user: {user_name} (Role: {user_role}).
-Organization Tenant ID: {tenant_id}...
+    const systemPrompt = `You are MeriBot, an expert executive AI assistant for Meridian ERP.
+Current user: {user_name} ({user_role}).
 
 {database_context}
 
-Instructions:
-- Provide clear, friendly, and practical business assistance.
-- If Database Context is provided above, use it as your primary ground truth.
-- Keep responses concise and well-formatted with markdown.`;
+CRITICAL INSTRUCTIONS:
+- You are speaking directly to a business executive or manager.
+- NEVER write SQL queries, SELECT statements, database schemas, or programming code.
+- ALWAYS extract the exact price, stock quantity, and facts from the LIVE WAREHOUSE INVENTORY FACTS above and answer directly in natural, polished English.
+- If asked about prices or stock levels, state the numbers clearly (e.g., "The Dell laptop is priced at ₹80,000, with 25 units currently in stock.").
+- If asked for recommendations on what to create next, suggest complementary products (e.g. laptop accessories, monitors, cables).
+- Keep responses concise, helpful, and professional.`;
 
     // Helper to escape braces in user/assistant history turns for ChatPromptTemplate
     const escapeBraces = (str) => (str || '').replace(/\{/g, '{{').replace(/\}/g, '}}');
