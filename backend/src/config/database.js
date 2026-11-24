@@ -30,6 +30,12 @@ const pool = new Pool({
   max: 20,                  // Max 20 connections in pool
   idleTimeoutMillis: 30000, // Close idle connections after 30s
   connectionTimeoutMillis: 10000,
+  keepAlive: true
+});
+
+// CRITICAL: Handle errors on idle clients in the pool so ECONNRESET doesn't crash the server
+pool.on('error', (err) => {
+  console.warn('⚠️ Unexpected error on idle PostgreSQL client (recovered):', err.message);
 });
 
 // Test the connection on startup
