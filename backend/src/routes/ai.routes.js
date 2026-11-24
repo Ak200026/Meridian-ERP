@@ -416,14 +416,20 @@ Instructions:
     if (!streamSucceeded) {
       let directReply = '';
       const lower = message.toLowerCase();
+      const categories = ['electronics', 'furniture', 'office-supplies', 'it-hardware', 'raw-materials'];
+      const matchedCat = categories.find(c => lower.includes(c) || lower.includes(c.replace('-', ' ')));
 
-      if (lower.includes('how many') || lower.includes('count') || lower.includes('inventory') || lower.includes('item') || lower.includes('total')) {
-        const overview = await executeTool('get_inventory_overview', {}, req.user);
-        directReply = `📊 **Warehouse Inventory Status**:\n\n` +
-          `• **Unique Product SKUs:** ${overview.total_products || 0}\n` +
-          `• **Total Units in Stock:** ${overview.total_quantity || 0}\n` +
-          `• **Total Inventory Value:** ₹${(overview.total_inventory_value || 0).toLocaleString('en-IN')}\n\n` +
-          `Your inventory data was retrieved directly from your PostgreSQL tenant database.`;
+      if (matchedCat) {
+        const catRes = await query(
+          'SELECT name, sku, quantity, unit_price, unit FROM products WHERE category = $1 AND tenant_id = $2 AND is_active = true',
+          [matchedCat, tenantId]
+        );
+        if (catRes.rows.length > 0) {
+          directReply = `📦 **${matchedCat.toUpperCase()} Products in Inventory**:\n\n` +
+            catRes.rows.map(p => `• **${p.name}** (${p.sku}) — Stock: ${p.quantity} ${p.unit || 'pcs'} @ ₹${parseFloat(p.unit_price).toLocaleString('en-IN')}`).join('\n');
+        } else {
+          directReply = `ℹ️ No products currently found under category **${matchedCat}** in your inventory.`;
+        }
       } else if (lower.includes('low stock') || lower.includes('reorder')) {
         const stockData = await executeTool('check_low_stock', {}, req.user);
         if (stockData.low_stock_products?.length > 0) {
@@ -432,11 +438,24 @@ Instructions:
         } else {
           directReply = '✅ **Inventory Healthy**: All product quantities are currently above their reorder thresholds.';
         }
+      } else if (lower.includes('how many') || lower.includes('count') || lower.includes('inventory') || lower.includes('item') || lower.includes('total')) {
+        const overview = await executeTool('get_inventory_overview', {}, req.user);
+        directReply = `📊 **Warehouse Inventory Status**:\n\n` +
+          `• **Unique Product SKUs:** ${overview.total_products || 0}\n` +
+          `• **Total Units in Stock:** ${overview.total_quantity || 0}\n` +
+          `• **Total Inventory Value:** ₹${(overview.total_inventory_value || 0).toLocaleString('en-IN')}\n\n` +
+          `Your inventory data was retrieved directly from your PostgreSQL tenant database.`;
       } else if (lower.includes('sales') || lower.includes('revenue') || lower.includes('order')) {
         const salesData = await executeTool('get_sales_summary', {}, req.user);
         directReply = `📈 **Sales Performance**: Monthly revenue is **₹${(salesData.monthly_revenue || 0).toLocaleString('en-IN')}** across **${salesData.order_count || 0}** orders.`;
       } else {
-        directReply = `Hello ${userName}! I am MeriBot, connected to your organization's database. Ask me about stock levels, low stock warnings, sales revenue, or product details.`;
+        const lookup = await executeTool('lookup_product', { query: message }, req.user);
+        if (lookup.products?.length > 0) {
+          directReply = `🔍 **Matching Products**:\n\n` +
+            lookup.products.map(p => `• **${p.name}** (${p.sku}) — Stock: ${p.quantity} @ ₹${p.unit_price}`).join('\n');
+        } else {
+          directReply = `Hello ${userName}! I am MeriBot, connected to your organization's database. Ask me about stock levels, category listings (e.g. "electronics items"), sales metrics, or product search.`;
+        }
       }
 
       res.write(`data: ${JSON.stringify({ type: 'chunk', chunk: directReply })}\n\n`);
