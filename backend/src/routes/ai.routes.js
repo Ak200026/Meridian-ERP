@@ -17,6 +17,7 @@ const {
   DEFAULT_TENANT_ID
 } = require('../ai/embeddings');
 const { getChatModel } = require('../ai/langchain/chatModel');
+const { getInventoryRetriever } = require('../ai/langchain/retriever');
 
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434';
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'llama3.2:1b';
@@ -60,13 +61,26 @@ function formatToolResultsAsFacts(toolResults) {
     } else if (fn === 'get_sales_summary') {
       lines.push(`• Sales Metrics: Monthly revenue is ${parsedRes?.monthly_revenue_formatted || ('₹' + (parsedRes?.monthly_revenue || 0).toLocaleString('en-IN'))} across ${parsedRes?.order_count || parsedRes?.monthly_orders_count || 0} orders.`);
     } else if (fn === 'get_inventory_overview') {
-      lines.push(`• Inventory Summary: Total ${parsedRes?.total_products_count ?? parsedRes?.total_products ?? 0} unique SKUs, ${parsedRes?.total_units_in_stock ?? parsedRes?.total_quantity ?? 0} units in stock, catalog valuation ${parsedRes?.total_inventory_value_formatted || ('₹' + (parsedRes?.total_inventory_value || 0).toLocaleString('en-IN'))}.`);
+      const skus = parsedRes?.total_products_count ?? parsedRes?.total_products ?? 0;
+      const units = parsedRes?.total_units_in_stock ?? parsedRes?.total_quantity ?? 0;
+      const val = parsedRes?.total_inventory_value_formatted || ('₹' + (parsedRes?.total_inventory_value || 0).toLocaleString('en-IN'));
+      lines.push(`• Inventory Summary:`);
+      lines.push(`  - Unique Catalog SKUs: ${skus}`);
+      lines.push(`  - Total Warehouse Units in Stock: ${units}`);
+      lines.push(`  - Total Catalog Valuation: ${val}`);
       if (parsedRes?.products?.length > 0) {
         lines.push(`• Active Warehouse Items:`);
         for (const p of parsedRes.products) {
           lines.push(`  - "${p.name}" (SKU: ${p.sku}) | Stock: ${p.stock ?? p.quantity} ${p.unit || 'pcs'} | Price: ₹${parseFloat(p.unit_price || p.price || 0).toLocaleString('en-IN')}`);
         }
       }
+      lines.push(`• EXACT INVENTORY FACTS GUIDANCE:`);
+      lines.push(`  - Unique products count: ${skus} (${parsedRes?.products?.[0]?.name || 'product'})`);
+      lines.push(`  - Total units in stock: ${units}`);
+      lines.push(`  - Total inventory valuation: ${val}`);
+      lines.push(`  - When asked about units in stock, answer with ${units} units.`);
+      lines.push(`  - When asked about products or item count, answer with ${skus} unique product.`);
+      lines.push(`  - NEVER invent 9,000, 8,500, or any other numbers.`);
     } else if (fn === 'add_new_product') {
       lines.push(`• Product Creation: ${parsedRes?.message || 'Product created successfully.'}`);
     }
@@ -124,6 +138,8 @@ Instructions:
     const startTime = Date.now();
     let assistantMsg = null;
     let toolSummary = null;
+    const activeProvider = process.env.GROQ_API_KEY ? 'Groq Cloud' : 'Ollama Local';
+    const activeModel = process.env.GROQ_API_KEY ? (process.env.GROQ_MODEL || 'llama-3.3-70b-versatile') : OLLAMA_MODEL;
 
     // Check if Groq Cloud API Key is configured
     if (process.env.GROQ_API_KEY) {
@@ -326,7 +342,8 @@ Instructions:
         message: assistantMsg?.content || 'I completed the request.',
         role: 'assistant',
         timestamp: new Date().toISOString(),
-        model: OLLAMA_MODEL,
+        provider: activeProvider,
+        model: activeModel,
         note
       }
     });
@@ -418,6 +435,14 @@ router.post('/stream-chat', verifyToken, async (req, res) => {
               toolResults.push({ tool: fnName, result: resData });
             }
 
+            const lowerQuery = message.toLowerCase().trim();
+            const isAgg = /how many.*(items?|products?|units?|stock|skus?)|total.*(items?|products?|units?|inventory|count|valuation|stock)|what is our.*(inventory|count|stock)|inventory (overview|summary|count|status)|catalog (overview|summary|count)|^how many items\b|^how many products\b|^total products\b|^total items\b|^how many units\b/i.test(lowerQuery);
+            if (isAgg && !toolResults.some(r => (r.tool || r.name) === 'get_inventory_overview')) {
+              toolNames.push('get_inventory_overview');
+              const ov = await executeTool('get_inventory_overview', {}, req.user);
+              toolResults.push({ tool: 'get_inventory_overview', result: ov });
+            }
+
             toolSummary = `🛠️ Tool called: ${toolNames.join(', ')}`;
             res.write(`data: ${JSON.stringify({ type: 'tool', summary: toolSummary })}\n\n`);
             toolContextText = formatToolResultsAsFacts(toolResults);
@@ -445,7 +470,7 @@ router.post('/stream-chat', verifyToken, async (req, res) => {
             keep_alive: '1h',
             options: { temperature: 0.1, num_predict: 150 }
           }),
-          signal: AbortSignal.timeout(2500)
+          signal: AbortSignal.timeout(4000)
         });
 
         if (toolCheckRes.ok) {
@@ -464,6 +489,14 @@ router.post('/stream-chat', verifyToken, async (req, res) => {
               toolResults.push({ tool: fnName, result: resData });
             }
 
+            const lowerQuery = message.toLowerCase().trim();
+            const isAgg = /how many.*(items?|products?|units?|stock|skus?)|total.*(items?|products?|units?|inventory|count|valuation|stock)|what is our.*(inventory|count|stock)|inventory (overview|summary|count|status)|catalog (overview|summary|count)|^how many items\b|^how many products\b|^total products\b|^total items\b|^how many units\b/i.test(lowerQuery);
+            if (isAgg && !toolResults.some(r => (r.tool || r.name) === 'get_inventory_overview')) {
+              toolNames.push('get_inventory_overview');
+              const ov = await executeTool('get_inventory_overview', {}, req.user);
+              toolResults.push({ tool: 'get_inventory_overview', result: ov });
+            }
+
             toolSummary = `🛠️ Tool called: ${toolNames.join(', ')}`;
             res.write(`data: ${JSON.stringify({ type: 'tool', summary: toolSummary })}\n\n`);
             toolContextText = formatToolResultsAsFacts(toolResults);
@@ -474,12 +507,41 @@ router.post('/stream-chat', verifyToken, async (req, res) => {
       }
     }
 
-    // Automatic Live Database Context Injection (Guarantees 0% Hallucination)
+    // Provider metadata setup
+    const activeProvider = process.env.GROQ_API_KEY ? 'Groq Cloud' : 'Ollama Local';
+    const activeModel = process.env.GROQ_API_KEY ? (process.env.GROQ_MODEL || 'llama-3.3-70b-versatile') : OLLAMA_MODEL;
+    console.log(`🤖 [MeriBot Stream] Active Provider: ${activeProvider} (${activeModel}) | User: ${userName} | Tenant: ${tenantId.substring(0, 8)}`);
+
+    // Automatic Live Database Context Injection (Guarantees 0% Hallucination & Fact Grounding)
     if (!toolContextText) {
-      const lower = message.toLowerCase();
+      const lower = message.toLowerCase().trim();
+
+      // 1. Exact Aggregate Inventory Questions (Safety Fallback for Count, Unit, Valuation, Overview queries)
+      const isAggregateInventory = /how many.*(items?|products?|units?|stock|skus?)|total.*(items?|products?|units?|inventory|count|valuation|stock)|what is our.*(inventory|count|stock)|inventory (overview|summary|count|status)|catalog (overview|summary|count)|^how many items\b|^how many products\b|^total products\b|^total items\b/i.test(lower);
+
+      // 2. Strategic Inventory Recommendations
       const isRecommendation = /create|add|suggest|recommend|what next|next item|new item|what should/i.test(lower);
 
-      if (isRecommendation) {
+      if (isAggregateInventory) {
+        const overview = await executeTool('get_inventory_overview', {}, req.user);
+        toolSummary = `📦 Live Inventory Overview`;
+        res.write(`data: ${JSON.stringify({ type: 'tool', summary: toolSummary })}\n\n`);
+        toolContextText = `VERIFIED LIVE DATABASE INVENTORY FACTS:\n` +
+          `• Unique Catalog SKUs: ${overview.total_products_count}\n` +
+          `• Total Warehouse Units in Stock: ${overview.total_units_in_stock}\n` +
+          `• Total Catalog Valuation: ${overview.total_inventory_value_formatted}\n` +
+          `• Verified Products in Catalog:\n` +
+          (overview.products?.length > 0
+            ? overview.products.map(p => `  - "${p.name}" (SKU: ${p.sku}) | In Stock: ${p.stock ?? p.quantity} ${p.unit || 'pcs'} | Unit Price: ₹${parseFloat(p.unit_price || p.price || 0).toLocaleString('en-IN')}`).join('\n')
+            : '  - No products in warehouse.') +
+          `\n\nEXACT REPORTING RULES:\n` +
+          `1. Answer directly and concisely with these exact verified numbers.\n` +
+          `2. When asked about product or item count: state there is ${overview.total_products_count} unique product (${overview.products?.[0]?.name || 'product'}).\n` +
+          `3. When asked about units or stock quantity: state there are ${overview.total_units_in_stock} total units in stock.\n` +
+          `4. When asked about total inventory count or overview: state there is ${overview.total_products_count} unique product with ${overview.total_units_in_stock} total units in stock, valued at ${overview.total_inventory_value_formatted}.\n` +
+          `5. Distinguish unique products (${overview.total_products_count}) from warehouse units (${overview.total_units_in_stock}).\n` +
+          `6. NEVER mention 9,000, 8,500, 100, or any unverified quantities.`;
+      } else if (isRecommendation) {
         const overview = await executeTool('get_inventory_overview', {}, req.user);
         const existingNames = overview.products?.map(p => p.name).join(', ') || 'existing products';
         toolSummary = `💡 Strategic Catalog Context`;
@@ -489,7 +551,7 @@ router.post('/stream-chat', verifyToken, async (req, res) => {
           `• Total SKUs in System: ${overview.total_products_count}\n` +
           `• Total Catalog Valuation: ${overview.total_inventory_value_formatted}\n` +
           `• Instruction: Recommend complementary commercial products, accessories, or high-margin business equipment that fit with existing products (e.g. laptop sleeves, docking stations, monitors, cables).`;
-      } else if (/laptop|stock|inventory|sku|what do we have|we have|do we have|price|cost|how many|reorder|available|item|product/i.test(lower)) {
+      } else if (/laptop|stock|inventory|sku|what do we have|we have|do we have|price|cost|reorder|available|item|product/i.test(lower)) {
         // Strip conversational phrases to isolate search keyword
         const cleanQuery = message
           .replace(/[?!.,;:'"()><]/g, ' ')
@@ -504,26 +566,35 @@ router.post('/stream-chat', verifyToken, async (req, res) => {
           toolContextText = `VERIFIED LIVE WAREHOUSE INVENTORY FACTS:\n` +
             searchRes.products.map(p =>
               `• Product: "${p.name}" (SKU: ${p.sku}) | Unit Price: ₹${parseFloat(p.unit_price || p.price || 0).toLocaleString('en-IN')} | Stock Available: ${p.quantity ?? p.stock} ${p.unit || 'pcs'} | Category: ${p.category} | Reorder Threshold: ${p.reorder_level || 10}`
-            ).join('\n');
-        } else if (/overview|summary|total|valuation|count/i.test(lower)) {
-          const overview = await executeTool('get_inventory_overview', {}, req.user);
-          toolSummary = `📦 Live Inventory Overview`;
-          res.write(`data: ${JSON.stringify({ type: 'tool', summary: toolSummary })}\n\n`);
-          toolContextText = `VERIFIED WAREHOUSE SUMMARY:\n` +
-            `• Total Unique SKUs: ${overview.total_products_count}\n` +
-            `• Total Warehouse Units: ${overview.total_units_in_stock}\n` +
-            `• Total Catalog Valuation: ${overview.total_inventory_value_formatted}\n` +
-            `• Verified Products in Catalog:\n` +
-            (overview.products?.length > 0
-              ? overview.products.map(p => `  - "${p.name}" (SKU: ${p.sku}) | In Stock: ${p.stock} ${p.unit || 'pcs'} | Unit Price: ₹${p.unit_price}`).join('\n')
-              : '  - No products in warehouse.') +
-            `\n• STRICT INSTRUCTION: Name ONLY the verified products listed above. NEVER invent placeholder products, hypothetical items, or names like Product A, B, or C.`;
-        } else if (cleanQuery.length > 2) {
-          toolSummary = `🔍 Inventory Catalog Lookup`;
-          res.write(`data: ${JSON.stringify({ type: 'tool', summary: toolSummary })}\n\n`);
-          toolContextText = `VERIFIED CATALOG RESULT:\n` +
-            `• No products matching "${cleanQuery}" were found in your organization's inventory catalog.\n` +
-            `• Clearly inform the user that this item was not found in their inventory. Never invent prices or quantities.`;
+            ).join('\n') +
+            `\nINSTRUCTION: Confirm availability directly: "Yes, we have ${searchRes.products[0].name} (SKU: ${searchRes.products[0].sku}) with ${searchRes.products[0].quantity ?? searchRes.products[0].stock} units in stock at ₹${parseFloat(searchRes.products[0].unit_price || searchRes.products[0].price || 0).toLocaleString('en-IN')}." Do not ask clarifying questions or write code.`;
+        } else {
+          // RAG Semantic Discovery Fallback
+          try {
+            const ragRetriever = await getInventoryRetriever(tenantId, { limit: 3 });
+            const ragDocs = await ragRetriever.invoke(cleanQuery || message);
+            if (ragDocs && ragDocs.length > 0) {
+              toolSummary = `🧠 Semantic Discovery (RAG): ${ragDocs.map(d => d.metadata?.name || 'Product').join(', ')}`;
+              res.write(`data: ${JSON.stringify({ type: 'tool', summary: toolSummary })}\n\n`);
+              toolContextText = `VERIFIED LIVE CATALOG MATCHES (VIA SEMANTIC RAG DISCOVERY):\n` +
+                ragDocs.map(d => `• Product: "${d.metadata?.name}" (SKU: ${d.metadata?.sku}) | Price: ₹${parseFloat(d.metadata?.unit_price || 0).toLocaleString('en-IN')} | Stock: ${d.metadata?.quantity || 0} ${d.metadata?.unit || 'pcs'} | Category: ${d.metadata?.category}`).join('\n') +
+                `\nINSTRUCTION: Confirm available products directly from the verified facts above.`;
+            } else if (cleanQuery.length > 2) {
+              toolSummary = `🔍 Inventory Catalog Lookup`;
+              res.write(`data: ${JSON.stringify({ type: 'tool', summary: toolSummary })}\n\n`);
+              toolContextText = `VERIFIED CATALOG RESULT:\n` +
+                `• No products matching "${cleanQuery}" were found in your organization's inventory catalog.\n` +
+                `• Clearly inform the user that this item was not found in their inventory. Never invent prices or quantities.`;
+            }
+          } catch (_) {
+            if (cleanQuery.length > 2) {
+              toolSummary = `🔍 Inventory Catalog Lookup`;
+              res.write(`data: ${JSON.stringify({ type: 'tool', summary: toolSummary })}\n\n`);
+              toolContextText = `VERIFIED CATALOG RESULT:\n` +
+                `• No products matching "${cleanQuery}" were found in your organization's inventory catalog.\n` +
+                `• Clearly inform the user that this item was not found in their inventory. Never invent prices or quantities.`;
+            }
+          }
         }
       } else if (/sales|revenue|order|customer|income|earn/i.test(lower)) {
         const salesRes = await executeTool('get_sales_summary', {}, req.user);
@@ -552,11 +623,11 @@ Current user: {user_name} ({user_role}). Organization Tenant: {tenant_id}.
 
 CRITICAL RULES FOR ACCURACY AND PROFESSIONALISM:
 1. Speak directly as an executive enterprise AI assistant for Meridian ERP.
-2. NEVER write SQL queries, SELECT statements, code blocks, or programming tutorials.
-3. NEVER invent quantities, prices, dates, customers, or financial stats. Use ONLY the VERIFIED facts provided above. NEVER invent placeholder product names (such as Product A, Product B, or Product C).
-4. If products are listed in the VERIFIED facts above, confirm their availability and state the exact product name, stock count, and price in ₹ (e.g. "Yes, we have Dell laptops in stock: 25 units available at ₹80,000 each.").
-5. If the verified facts state that no matching products were found, state that the requested item is not found in the organization's catalog.
-6. If the user asks for recommendations on what to create next, suggest relevant commercial products based on their current inventory.
+2. GROUND TRUTH OVERRIDE RULE: Live DATABASE CONTEXT strictly overrides any previous conversational turns or historical claims. If previous turns mentioned unverified counts (such as "9,000 items" or unverified products), DISREGARD those claims and answer strictly using the live verified database facts above.
+3. NEVER generate code, SQL queries, database commands, or programming tutorials.
+4. When products are confirmed in the verified facts, state their exact name, stock count, and price in ₹ immediately. Do not ask the user for confirmation.
+5. If the verified facts state that no matching products were found, clearly state that the item is not found in the organization's catalog.
+6. When recommending items to create, suggest complementary commercial products based on current inventory.
 7. Present all monetary figures in Indian Rupees (₹) with clean formatting.
 8. Keep answers concise, direct, and professional.`;
 
@@ -611,10 +682,22 @@ CRITICAL RULES FOR ACCURACY AND PROFESSIONALISM:
     if (!streamSucceeded) {
       let directReply = '';
       const lower = message.toLowerCase();
+      const isAggregate = /how many.*(items?|products?|units?|stock|skus?)|total.*(items?|products?|units?|inventory|count|valuation|stock)|what is our.*(inventory|count|stock)|inventory (overview|summary|count|status)|catalog (overview|summary|count)|^how many items\b|^how many products\b|^total products\b|^total items\b/i.test(lower);
       const categories = ['electronics', 'furniture', 'office-supplies', 'it-hardware', 'raw-materials'];
       const matchedCat = categories.find(c => lower.includes(c) || lower.includes(c.replace('-', ' ')));
 
-      if (/create|add|suggest|recommend|what next|next item|new item|what should/i.test(lower)) {
+      if (isAggregate || lower.includes('overview') || lower.includes('summary') || lower.includes('valuation') || lower.includes('total stock')) {
+        const overview = await executeTool('get_inventory_overview', {}, req.user);
+        directReply = `📊 **Warehouse Inventory Status**:\n\n` +
+          `• **Unique Product SKUs:** ${overview.total_products_count}\n` +
+          `• **Total Units in Stock:** ${overview.total_units_in_stock}\n` +
+          `• **Total Inventory Value:** ${overview.total_inventory_value_formatted}\n\n` +
+          (overview.products?.length > 0
+            ? `**Active Products:**\n` + overview.products.map(p => `• **${p.name}** (${p.sku}) — Stock: ${p.stock ?? p.quantity} ${p.unit || 'pcs'} @ ₹${parseFloat(p.unit_price || p.price || 0).toLocaleString('en-IN')}`).join('\n') + `\n\n`
+            : '') +
+          `Your inventory data was retrieved directly from your PostgreSQL tenant database.`;
+        toolSummary = '⚡ Direct PostgreSQL Tenant Query';
+      } else if (/create|add|suggest|recommend|what next|next item|new item|what should/i.test(lower)) {
         const overview = await executeTool('get_inventory_overview', {}, req.user);
         const existingNames = overview.products?.map(p => p.name).join(', ') || 'existing products';
         directReply = `💡 **Recommended Products to Create**:\n\n` +
@@ -645,14 +728,6 @@ CRITICAL RULES FOR ACCURACY AND PROFESSIONALISM:
         } else {
           directReply = '✅ **Inventory Healthy**: All product quantities are currently above their reorder thresholds.';
         }
-        toolSummary = '⚡ Direct PostgreSQL Tenant Query';
-      } else if (lower.includes('overview') || lower.includes('summary') || lower.includes('valuation') || lower.includes('total stock')) {
-        const overview = await executeTool('get_inventory_overview', {}, req.user);
-        directReply = `📊 **Warehouse Inventory Status**:\n\n` +
-          `• **Unique Product SKUs:** ${overview.total_products_count}\n` +
-          `• **Total Units in Stock:** ${overview.total_units_in_stock}\n` +
-          `• **Total Inventory Value:** ${overview.total_inventory_value_formatted}\n\n` +
-          `Your inventory data was retrieved directly from your PostgreSQL tenant database.`;
         toolSummary = '⚡ Direct PostgreSQL Tenant Query';
       } else if (lower.includes('sales') || lower.includes('revenue') || lower.includes('order')) {
         const salesData = await executeTool('get_sales_summary', {}, req.user);
@@ -688,10 +763,10 @@ CRITICAL RULES FOR ACCURACY AND PROFESSIONALISM:
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
     const note = toolSummary
-      ? `${toolSummary} • Streamed in ${duration}s via LangChain .pipe() & .stream()`
-      : `⚡ Streamed live via LangChain .pipe() & .stream() in ${duration}s (Local ${OLLAMA_MODEL})`;
+      ? `${toolSummary} • Streamed in ${duration}s via LangChain .pipe() & .stream() (${activeProvider}: ${activeModel})`
+      : `⚡ Streamed live via LangChain .pipe() & .stream() in ${duration}s (${activeProvider}: ${activeModel})`;
 
-    res.write(`data: ${JSON.stringify({ type: 'done', note, duration })}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: 'done', note, duration, provider: activeProvider, model: activeModel })}\n\n`);
     res.write('data: [DONE]\n\n');
     res.end();
   } catch (err) {

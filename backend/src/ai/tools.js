@@ -38,7 +38,7 @@ const tools = [
     type: 'function',
     function: {
       name: 'check_low_stock',
-      description: 'Find all products in inventory that have low stock (where quantity is at or below the reorder threshold).',
+      description: 'Find products that have low or depleted stock (where quantity is at or below the reorder threshold). Only call when user asks about low stock, replenishment, or reordering.',
       parameters: {
         type: 'object',
         properties: {},
@@ -83,7 +83,7 @@ const tools = [
     type: 'function',
     function: {
       name: 'get_inventory_overview',
-      description: 'Get an overview of the entire inventory: total products count, list of all product names and total items.',
+      description: 'Get overall inventory statistics: total unique products count, total warehouse units in stock, total inventory valuation, and active product catalog summary. Use when user asks how many items/products/units in stock, total inventory count, or inventory overview.',
       parameters: {
         type: 'object',
         properties: {},

@@ -49,7 +49,14 @@ async function generateStructuredInventoryInsights(inventoryContextText) {
       setTimeout(() => reject(new Error('Structured output generation timed out (5s)')), 5000)
     );
     const rawResult = await Promise.race([invokePromise, timeoutPromise]);
-    return inventoryInsightsSchema.parse(rawResult);
+    const parsed = inventoryInsightsSchema.parse(rawResult);
+    if (!parsed.recommendations || parsed.recommendations.length === 0) {
+      parsed.recommendations = [
+        'Maintain current safety stock levels and monitor consumption trends.',
+        'Review supplier lead times for upcoming reorder cycles.'
+      ];
+    }
+    return parsed;
   } catch (err) {
     console.warn('⚠️ [LangChain] LLM unreachable, generating rule-based structured insights fallback:', err.message);
     const hasLowStock = inventoryContextText.toLowerCase().includes('low') || inventoryContextText.toLowerCase().includes('reorder');
