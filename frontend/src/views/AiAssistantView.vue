@@ -463,7 +463,7 @@
 </template>
 
 <script setup>
-import { ref, nextTick, computed } from 'vue';
+import { ref, reactive, nextTick, computed } from 'vue';
 import { useAuthStore } from '../stores/auth.store';
 import api from '../api/axios';
 
@@ -568,13 +568,13 @@ const sendMessage = async () => {
 
   scrollToBottom();
 
-  const aiMsg = {
+  const aiMsg = reactive({
     id: Date.now() + 1,
     role: 'assistant',
     content: '',
     note: '',
     time: formatTime()
-  };
+  });
 
   try {
     const token = localStorage.getItem('token');
@@ -603,8 +603,9 @@ const sendMessage = async () => {
     const decoder = new TextDecoder();
     let buffer = '';
     let pushed = false;
+    let streamFinished = false;
 
-    while (true) {
+    while (!streamFinished) {
       const { done, value } = await reader.read();
       if (done) break;
 
@@ -616,10 +617,16 @@ const sendMessage = async () => {
         const trimmed = line.trim();
         if (!trimmed || !trimmed.startsWith('data: ')) continue;
         const jsonStr = trimmed.slice(6).trim();
-        if (jsonStr === '[DONE]') break;
+
+        if (jsonStr === '[DONE]') {
+          streamFinished = true;
+          isTyping.value = false;
+          break;
+        }
 
         try {
           const payload = JSON.parse(jsonStr);
+
           if (payload.type === 'tool') {
             aiMsg.note = `${payload.summary} • Streaming response...`;
             if (!pushed) {
@@ -637,6 +644,8 @@ const sendMessage = async () => {
             scrollToBottom();
           } else if (payload.type === 'done') {
             if (payload.note) aiMsg.note = payload.note;
+            isTyping.value = false;
+            streamFinished = true;
           } else if (payload.type === 'error') {
             aiMsg.content = `Error: ${payload.message || 'Error during streaming'}`;
             if (!pushed) {
@@ -644,6 +653,7 @@ const sendMessage = async () => {
               pushed = true;
               isTyping.value = false;
             }
+            streamFinished = true;
           }
         } catch (e) {
           // Ignore JSON parse errors for non-JSON lines
@@ -654,6 +664,7 @@ const sendMessage = async () => {
     if (!pushed) {
       messages.value.push(aiMsg);
     }
+    isTyping.value = false;
     if (!aiMsg.content.trim()) {
       aiMsg.content = 'I processed your request, but no response text was generated.';
     }
