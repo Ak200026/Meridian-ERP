@@ -479,7 +479,7 @@ const searched = ref(false);
 const userInitial = computed(() => authStore.userInitials);
 
 const quickPrompts = [
-  { label: 'Stock & Price of Case', text: 'Look up stock and price of Case' },
+  { label: 'Stock & Price of Laptop', text: 'Look up stock and price of Laptop' },
   { label: 'Low Stock Alert', text: 'Check low stock items across catalog' },
   { label: 'Sales Performance', text: 'What are our sales orders this month?' },
   { label: 'Inventory Summary', text: 'Give me an inventory overview' }
@@ -713,7 +713,7 @@ const runLangChainAudit = async () => {
   }
 };
 
-const ragQuestion = ref('What is the stock and price of Case?');
+const ragQuestion = ref('What is the stock and price of Laptop?');
 const ragResult = ref(null);
 const loadingRag = ref(false);
 

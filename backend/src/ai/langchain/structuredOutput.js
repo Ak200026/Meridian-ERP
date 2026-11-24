@@ -44,7 +44,11 @@ async function generateStructuredInventoryInsights(inventoryContextText) {
       `${inventoryContextText}\n\n` +
       `Assess whether stock is sufficient, identify low stock risks, and provide practical recommendations.`;
 
-    const rawResult = await structuredModel.invoke(prompt);
+    const invokePromise = structuredModel.invoke(prompt);
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Structured output generation timed out (5s)')), 5000)
+    );
+    const rawResult = await Promise.race([invokePromise, timeoutPromise]);
     return inventoryInsightsSchema.parse(rawResult);
   } catch (err) {
     console.warn('⚠️ [LangChain] LLM unreachable, generating rule-based structured insights fallback:', err.message);

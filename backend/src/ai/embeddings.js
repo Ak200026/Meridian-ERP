@@ -202,7 +202,7 @@ function cosineSimilarity(vecA, vecB) {
 
             const limit = options.limit || 5;
             const tenantId = options.tenantId || DEFAULT_TENANT_ID;
-            const minSimilarity = options.minSimilarity !== undefined ? options.minSimilarity : 0.20;
+            const minSimilarity = options.minSimilarity !== undefined ? options.minSimilarity : 0.38;
 
             // 1. Generate query vector (with retry)
             const queryVector = await generateEmbedding(searchQuery);

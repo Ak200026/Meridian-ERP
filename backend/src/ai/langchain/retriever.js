@@ -60,8 +60,8 @@ async function getInventoryRetriever(tenantId, options = {}) {
       // If full natural-language sentence had no match, clean conversational stop words and retry
       if (!products || products.length === 0) {
         const keywords = query
-          .replace(/[?!.,;:'"()]/g, ' ')
-          .replace(/\b(what|is|are|the|our|tell|me|about|how|much|many|do|we|have|check|find|lookup|show|in|stock|inventory|price|cost|of|for|a|an|and)\b/gi, ' ')
+          .replace(/[?!.,;:'"()><]/g, ' ')
+          .replace(/\b(what|is|are|the|our|tell|me|about|how|much|many|do|we|have|check|find|lookup|show|in|stock|inventory|price|cost|of|for|a|an|any|item|items|product|products|and)\b/gi, ' ')
           .replace(/\s+/g, ' ')
           .trim();
 

@@ -118,6 +118,16 @@ function extractArg(args, key, fallback = null) {
   return fallback;
 }
 
+// Prompt Injection Sanitizer
+function sanitizeSearchQuery(input) {
+  if (!input || typeof input !== 'string') return '';
+  return input
+    .replace(/(?:ignore\s+(?:previous|above|all)\s+instructions?|system\s+prompt|system:\s*|role:\s*assistant)/gi, ' ')
+    .replace(/[;`\\]/g, ' ')
+    .trim()
+    .substring(0, 300);
+}
+
   // ------------------------------------------------------------
   // 🔀 HYBRID SEARCH: CONCURRENT KEYWORD + VECTOR FUSION
   // ------------------------------------------------------------
@@ -130,19 +140,22 @@ function extractArg(args, key, fallback = null) {
     if (!searchTerm || !searchTerm.trim()) return [];
 
     const cleanTerm = searchTerm.trim();
+    const stemTerm = cleanTerm.endsWith('s') && cleanTerm.length > 3
+      ? cleanTerm.slice(0, -1)
+      : cleanTerm;
 
     // Run keyword and semantic queries concurrently in PostgreSQL
     const [keywordRes, semanticResults] = await Promise.all([
       query(
         `SELECT id, name, sku, category, unit_price, quantity, reorder_level, unit, description
        FROM products
-       WHERE (name ILIKE $1 OR sku ILIKE $1 OR description ILIKE $1)
+       WHERE (name ILIKE $1 OR sku ILIKE $1 OR description ILIKE $1 OR name ILIKE $2 OR description ILIKE $2)
          AND is_active = true
-         AND tenant_id = $2
-       LIMIT $3`,
-        [`%${cleanTerm}%`, tenantId, limit]
+         AND tenant_id = $3
+       LIMIT $4`,
+        [`%${cleanTerm}%`, `%${stemTerm}%`, tenantId, limit]
       ),
-      inDatabaseSemanticSearch(cleanTerm, { limit, tenantId, minSimilarity: 0.20 })
+      inDatabaseSemanticSearch(cleanTerm, { limit, tenantId, minSimilarity: 0.38 })
     ]);
 
     const map = new Map();
@@ -214,39 +227,49 @@ function extractArg(args, key, fallback = null) {
     try {
       switch (name) {
         case 'lookup_product': {
-          const searchTerm = extractArg(rawArgs, 'query') || extractArg(rawArgs, 'name') || '';
+          const rawSearchTerm = extractArg(rawArgs, 'query') || extractArg(rawArgs, 'name') || '';
+          const searchTerm = sanitizeSearchQuery(rawSearchTerm);
+
+          if (!searchTerm) {
+            return {
+              found: false,
+              message: 'Please provide a valid product name or keyword to search.'
+            };
+          }
 
           // Execute Hybrid Search (Keyword + In-Database Vector Semantic)
           const products = await performHybridProductSearch(searchTerm, tenantId, 5);
 
-        if(products.length === 0) {
-              return {
-                found: false,
-                message: `No products matching "${searchTerm}" found in your organization's inventory.`
-              };
-            }
-
+          if (products.length === 0) {
             return {
-              found: true,
-              count: products.length,
-              search_type: 'hybrid_search',
-              products: products.map(p => ({
-                name: p.name,
-                sku: p.sku,
-                category: p.category,
-                price: p.price,
-                stock: p.stock,
-                unit: p.unit,
-                is_low_stock: p.is_low_stock,
-                match_type: p.matchType,
-                match_confidence: p.match_confidence || `${p.matchPercentage}% match`
-              }))
+              found: false,
+              message: `No products matching "${searchTerm}" found in your organization's inventory.`
             };
           }
 
+          return {
+            found: true,
+            count: products.length,
+            search_type: 'hybrid_search',
+            products: products.map(p => ({
+              name: p.name,
+              sku: p.sku,
+              category: p.category,
+              price: p.price,
+              unit_price: p.unit_price || p.price,
+              stock: p.stock,
+              quantity: p.stock,
+              unit: p.unit || 'pcs',
+              is_low_stock: p.is_low_stock,
+              match_type: p.matchType,
+              match_confidence: p.match_confidence || `${p.matchPercentage}% match`
+            }))
+          };
+        }
+
       case 'check_low_stock': {
-          const res = await query(
-            `SELECT name, sku, category, quantity, reorder_level, unit
+        const res = await query(
+          `SELECT name, sku, category, quantity, reorder_level, unit
            FROM products
            WHERE quantity <= reorder_level
              AND is_active = true
@@ -254,15 +277,21 @@ function extractArg(args, key, fallback = null) {
            ORDER BY quantity ASC`,
           [tenantId]
         );
+        const lowStockList = res.rows.map(p => ({
+          name: p.name,
+          sku: p.sku,
+          category: p.category,
+          quantity: p.quantity,
+          current_stock: p.quantity,
+          reorder_level: p.reorder_level,
+          reorder_threshold: p.reorder_level,
+          unit: p.unit || 'pcs'
+        }));
         return {
           total_low_stock_items: res.rows.length,
-          items: res.rows.map(p => ({
-            name: p.name,
-            sku: p.sku,
-            current_stock: p.quantity,
-            reorder_threshold: p.reorder_level,
-            unit: p.unit
-          }))
+          count: res.rows.length,
+          items: lowStockList,
+          low_stock_products: lowStockList
         };
       }
 
@@ -293,13 +322,17 @@ function extractArg(args, key, fallback = null) {
           )
         ]);
 
+        const orderCount = parseInt(revenueData.rows[0].count, 10);
+        const totalRevenue = parseFloat(revenueData.rows[0].total) || 0;
+
         return {
-          monthly_orders_count: parseInt(revenueData.rows[0].count, 10),
-          monthly_revenue: `₹${ parseFloat(revenueData.rows[0].total).toLocaleString('en-IN')
-        } `,
+          order_count: orderCount,
+          monthly_orders_count: orderCount,
+          monthly_revenue: totalRevenue,
+          monthly_revenue_formatted: `₹${totalRevenue.toLocaleString('en-IN')}`,
           recent_orders: ordersData.rows.map(o => ({
             order_number: o.order_number,
-            amount: `₹${ o.total_amount } `,
+            amount: `₹${parseFloat(o.total_amount).toLocaleString('en-IN')}`,
             status: o.status,
             customer: o.customer || 'Direct Customer'
           }))
@@ -307,6 +340,13 @@ function extractArg(args, key, fallback = null) {
       }
 
       case 'add_new_product': {
+        // Strict Tenant Check: Never permit product creation without an authenticated tenant
+        if (!userContext.tenant_id) {
+          return {
+            error: 'Authentication error: Valid tenant context is required to create products.'
+          };
+        }
+
         // Strict RBAC: Only admin and manager can create products
         if (!['admin', 'manager'].includes(userRole)) {
           return {
@@ -314,51 +354,64 @@ function extractArg(args, key, fallback = null) {
           };
         }
 
-        const pName = extractArg(rawArgs, 'name');
-        const pSku = extractArg(rawArgs, 'sku');
+        const rawName = extractArg(rawArgs, 'name');
+        const rawSku = extractArg(rawArgs, 'sku');
+        const pName = typeof rawName === 'string' ? rawName.trim() : '';
+        const pSku = typeof rawSku === 'string' ? rawSku.trim() : '';
         const pPrice = Number(extractArg(rawArgs, 'price', 0));
         const pQty = parseInt(extractArg(rawArgs, 'quantity', 0), 10);
         const pCat = extractArg(rawArgs, 'category', 'electronics');
 
-        if (!pName || !pSku) {
-          return { error: 'Both product name and SKU are required to create a product.' };
+        if (!pName) {
+          return { error: 'Product name is required.' };
+        }
+        if (!pSku) {
+          return { error: 'Product SKU is required.' };
+        }
+        if (isNaN(pPrice) || pPrice < 0) {
+          return { error: 'Price must be a valid non-negative number.' };
+        }
+        if (isNaN(pQty) || pQty < 0) {
+          return { error: 'Quantity must be a valid non-negative integer.' };
         }
 
         const id = uuidv4();
         const res = await query(
-            `INSERT INTO products (id, name, sku, category, description, unit_price, quantity, reorder_level, unit, tenant_id, created_at)
+          `INSERT INTO products (id, name, sku, category, description, unit_price, quantity, reorder_level, unit, tenant_id, created_at)
            VALUES ($1, $2, $3, $4, 'Created by AI Assistant', $5, $6, 10, 'pcs', $7, NOW())
            RETURNING id, name, sku, category, unit_price, quantity`,
-            [id, pName, pSku, pCat, pPrice, pQty, tenantId]
+          [id, pName, pSku, pCat, pPrice, pQty, tenantId]
         );
-          const createdProduct = res.rows[0];
+        const createdProduct = res.rows[0];
 
-          // Automatically sync 384-dimensional vector embedding in background
-          syncProductEmbedding(
-            createdProduct.id,
-            createdProduct.name,
-            'Created by AI Assistant',
-            createdProduct.category,
-            tenantId
-          ).catch(() => { });
+        // Automatically sync 384-dimensional vector embedding in background
+        syncProductEmbedding(
+          createdProduct.id,
+          createdProduct.name,
+          'Created by AI Assistant',
+          createdProduct.category,
+          tenantId
+        ).catch(() => { });
 
-          return {
-            success: true,
-            message: `Product "${pName}" created successfully in PostgreSQL (Tenant: ${tenantId.substring(0, 8)}...)!`,
-            product: createdProduct
-          };
+        return {
+          success: true,
+          message: `Product "${pName}" created successfully in PostgreSQL (Tenant: ${tenantId.substring(0, 8)}...)!`,
+          product: createdProduct
+        };
       }
 
       case 'get_inventory_overview': {
         const [countRes, listRes] = await Promise.all([
           query(
-            `SELECT COUNT(*) as total_count, COALESCE(SUM(quantity), 0) as total_units 
+            `SELECT COUNT(*) as total_count, 
+                    COALESCE(SUM(quantity), 0) as total_units,
+                    COALESCE(SUM(quantity * unit_price), 0) as total_value
              FROM products 
              WHERE tenant_id = $1 AND is_active = true`,
             [tenantId]
           ),
           query(
-            `SELECT name, sku, quantity, unit_price 
+            `SELECT name, sku, category, quantity, unit_price, unit 
              FROM products 
              WHERE tenant_id = $1 AND is_active = true
              ORDER BY name ASC 
@@ -366,20 +419,39 @@ function extractArg(args, key, fallback = null) {
             [tenantId]
           )
         ]);
+
+        const totalCount = parseInt(countRes.rows[0].total_count, 10);
+        const totalUnits = parseInt(countRes.rows[0].total_units, 10);
+        const totalValue = parseFloat(countRes.rows[0].total_value) || 0;
+
         return {
-          total_products_count: parseInt(countRes.rows[0].total_count, 10),
-          total_units_in_stock: parseInt(countRes.rows[0].total_units, 10),
+          total_products_count: totalCount,
+          total_products: totalCount,
+          total_units_in_stock: totalUnits,
+          total_quantity: totalUnits,
+          total_inventory_value: totalValue,
+          total_inventory_value_formatted: `₹${totalValue.toLocaleString('en-IN')}`,
           products: listRes.rows.map(p => ({
             name: p.name,
             sku: p.sku,
+            category: p.category,
             stock: p.quantity,
-            price: `₹${p.unit_price}`
+            quantity: p.quantity,
+            unit: p.unit || 'pcs',
+            price: `₹${parseFloat(p.unit_price).toLocaleString('en-IN')}`,
+            unit_price: parseFloat(p.unit_price)
           }))
         };
       }
 
       case 'semantic_search_products': {
-        const concept = extractArg(rawArgs, 'concept') || extractArg(rawArgs, 'query') || '';
+        const rawConcept = extractArg(rawArgs, 'concept') || extractArg(rawArgs, 'query') || '';
+        const concept = sanitizeSearchQuery(rawConcept);
+
+        if (!concept) {
+          return { found: false, message: 'Please provide a concept to search.' };
+        }
+
         const results = await inDatabaseSemanticSearch(concept, { limit: 5, tenantId });
 
         if (results.length === 0) {
