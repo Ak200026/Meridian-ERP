@@ -13,7 +13,7 @@
             <polyline points="2 12 12 17 22 12"></polyline>
           </svg>
         </div>
-        <h1 class="login-logo-name">Bizosuite</h1>
+        <h1 class="login-logo-name">Meridian</h1>
         <p class="login-logo-tagline">Enterprise Resource Planning &amp; AI Intelligence</p>
       </div>
 
@@ -324,7 +324,7 @@
 
         <!-- Bottom Mode Toggle -->
         <div v-if="mode === 'login'" class="auth-footer-toggle">
-          <span>New to Bizosuite?</span>
+          <span>New to Meridian?</span>
           <button type="button" class="auth-toggle-link" @click="switchMode('register')">Create an account</button>
         </div>
         <div v-else-if="mode === 'register'" class="auth-footer-toggle">

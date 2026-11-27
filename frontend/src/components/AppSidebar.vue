@@ -11,7 +11,7 @@
       </div>
       <div class="logo-text">
         <div class="logo-name">
-          <span>Bizosuite</span>
+          <span>Meridian</span>
           <span style="font-size: 9px; padding: 1px 4px; background: rgba(99,102,241,0.12); color: #818cf8; border-radius: 3px; font-weight: 600; letter-spacing: 0.05em">ERP</span>
         </div>
         <span class="logo-tagline">Enterprise Operating System</span>

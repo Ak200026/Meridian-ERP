@@ -175,7 +175,7 @@ Instructions:
                 args = typeof call.function?.arguments === 'string'
                   ? JSON.parse(call.function.arguments)
                   : (call.function?.arguments || {});
-              } catch (_) {}
+              } catch (_) { }
 
               toolNames.push(fnName);
               const toolResult = await executeTool(fnName, args, req.user);
@@ -428,7 +428,7 @@ router.post('/stream-chat', verifyToken, async (req, res) => {
                 args = typeof call.function?.arguments === 'string'
                   ? JSON.parse(call.function.arguments)
                   : (call.function?.arguments || {});
-              } catch (_) {}
+              } catch (_) { }
 
               toolNames.push(fnName);
               const resData = await executeTool(fnName, args, req.user);
@@ -522,100 +522,100 @@ router.post('/stream-chat', verifyToken, async (req, res) => {
       // 2. Strategic Inventory Recommendations
       const isRecommendation = /create|add|suggest|recommend|what next|next item|new item|what should/i.test(lower);
 
-      if (isAggregateInventory) {
-        const overview = await executeTool('get_inventory_overview', {}, req.user);
-        toolSummary = `📦 Live Inventory Overview`;
-        res.write(`data: ${JSON.stringify({ type: 'tool', summary: toolSummary })}\n\n`);
-        toolContextText = `VERIFIED LIVE DATABASE INVENTORY FACTS:\n` +
-          `• Unique Catalog SKUs: ${overview.total_products_count}\n` +
-          `• Total Warehouse Units in Stock: ${overview.total_units_in_stock}\n` +
-          `• Total Catalog Valuation: ${overview.total_inventory_value_formatted}\n` +
-          `• Verified Products in Catalog:\n` +
-          (overview.products?.length > 0
-            ? overview.products.map(p => `  - "${p.name}" (SKU: ${p.sku}) | In Stock: ${p.stock ?? p.quantity} ${p.unit || 'pcs'} | Unit Price: ₹${parseFloat(p.unit_price || p.price || 0).toLocaleString('en-IN')}`).join('\n')
-            : '  - No products in warehouse.') +
-          `\n\nEXACT REPORTING RULES:\n` +
-          `1. Answer directly and concisely with these exact verified numbers.\n` +
-          `2. When asked about product or item count: state there is ${overview.total_products_count} unique product (${overview.products?.[0]?.name || 'product'}).\n` +
-          `3. When asked about units or stock quantity: state there are ${overview.total_units_in_stock} total units in stock.\n` +
-          `4. When asked about total inventory count or overview: state there is ${overview.total_products_count} unique product with ${overview.total_units_in_stock} total units in stock, valued at ${overview.total_inventory_value_formatted}.\n` +
-          `5. Distinguish unique products (${overview.total_products_count}) from warehouse units (${overview.total_units_in_stock}).\n` +
-          `6. NEVER mention 9,000, 8,500, 100, or any unverified quantities.`;
-      } else if (isRecommendation) {
-        const overview = await executeTool('get_inventory_overview', {}, req.user);
-        const existingNames = overview.products?.map(p => p.name).join(', ') || 'existing products';
-        toolSummary = `💡 Strategic Catalog Context`;
-        res.write(`data: ${JSON.stringify({ type: 'tool', summary: toolSummary })}\n\n`);
-        toolContextText = `VERIFIED INVENTORY CONTEXT FOR STRATEGIC RECOMMENDATIONS:\n` +
-          `• Existing Active Products: ${existingNames}\n` +
-          `• Total SKUs in System: ${overview.total_products_count}\n` +
-          `• Total Catalog Valuation: ${overview.total_inventory_value_formatted}\n` +
-          `• Instruction: Recommend complementary commercial products, accessories, or high-margin business equipment that fit with existing products (e.g. laptop sleeves, docking stations, monitors, cables).`;
-      } else if (/laptop|stock|inventory|sku|what do we have|we have|do we have|price|cost|reorder|available|item|product/i.test(lower)) {
-        // Strip conversational phrases to isolate search keyword
-        const cleanQuery = message
-          .replace(/[?!.,;:'"()><]/g, ' ')
-          .replace(/\b(what|is|are|the|our|tell|me|about|how|much|many|do|we|have|check|find|lookup|show|in|stock|inventory|price|cost|of|for|a|an|any|item|items|product|products)\b/gi, ' ')
-          .replace(/\s+/g, ' ')
-          .trim();
-
-        const searchRes = await executeTool('lookup_product', { query: cleanQuery || message }, req.user);
-        if (searchRes.products?.length > 0) {
-          toolSummary = `🔍 Live Database Match: ${searchRes.products.map(p => p.name).join(', ')}`;
+        if (isAggregateInventory) {
+          const overview = await executeTool('get_inventory_overview', {}, req.user);
+          toolSummary = `📦 Live Inventory Overview`;
           res.write(`data: ${JSON.stringify({ type: 'tool', summary: toolSummary })}\n\n`);
-          toolContextText = `VERIFIED LIVE WAREHOUSE INVENTORY FACTS:\n` +
-            searchRes.products.map(p =>
-              `• Product: "${p.name}" (SKU: ${p.sku}) | Unit Price: ₹${parseFloat(p.unit_price || p.price || 0).toLocaleString('en-IN')} | Stock Available: ${p.quantity ?? p.stock} ${p.unit || 'pcs'} | Category: ${p.category} | Reorder Threshold: ${p.reorder_level || 10}`
+          toolContextText = `VERIFIED LIVE DATABASE INVENTORY FACTS:\n` +
+            `• Unique Catalog SKUs: ${overview.total_products_count}\n` +
+            `• Total Warehouse Units in Stock: ${overview.total_units_in_stock}\n` +
+            `• Total Catalog Valuation: ${overview.total_inventory_value_formatted}\n` +
+            `• Verified Products in Catalog:\n` +
+            (overview.products?.length > 0
+              ? overview.products.map(p => `  - "${p.name}" (SKU: ${p.sku}) | In Stock: ${p.stock ?? p.quantity} ${p.unit || 'pcs'} | Unit Price: ₹${parseFloat(p.unit_price || p.price || 0).toLocaleString('en-IN')}`).join('\n')
+              : '  - No products in warehouse.') +
+            `\n\nEXACT REPORTING RULES:\n` +
+            `1. Answer directly and concisely with these exact verified numbers.\n` +
+            `2. When asked about product or item count: state there is ${overview.total_products_count} unique product (${overview.products?.[0]?.name || 'product'}).\n` +
+            `3. When asked about units or stock quantity: state there are ${overview.total_units_in_stock} total units in stock.\n` +
+            `4. When asked about total inventory count or overview: state there is ${overview.total_products_count} unique product with ${overview.total_units_in_stock} total units in stock, valued at ${overview.total_inventory_value_formatted}.\n` +
+            `5. Distinguish unique products (${overview.total_products_count}) from warehouse units (${overview.total_units_in_stock}).\n` +
+            `6. NEVER mention 9,000, 8,500, 100, or any unverified quantities.`;
+        } else if (isRecommendation) {
+          const overview = await executeTool('get_inventory_overview', {}, req.user);
+          const existingNames = overview.products?.map(p => p.name).join(', ') || 'existing products';
+          toolSummary = `💡 Strategic Catalog Context`;
+          res.write(`data: ${JSON.stringify({ type: 'tool', summary: toolSummary })}\n\n`);
+          toolContextText = `VERIFIED INVENTORY CONTEXT FOR STRATEGIC RECOMMENDATIONS:\n` +
+            `• Existing Active Products: ${existingNames}\n` +
+            `• Total SKUs in System: ${overview.total_products_count}\n` +
+            `• Total Catalog Valuation: ${overview.total_inventory_value_formatted}\n` +
+            `• Instruction: Recommend complementary commercial products, accessories, or high-margin business equipment that fit with existing products (e.g. laptop sleeves, docking stations, monitors, cables).`;
+        } else if (/laptop|stock|inventory|sku|what do we have|we have|do we have|price|cost|reorder|available|item|product/i.test(lower)) {
+          // Strip conversational phrases to isolate search keyword
+          const cleanQuery = message
+            .replace(/[?!.,;:'"()><]/g, ' ')
+            .replace(/\b(what|is|are|the|our|tell|me|about|how|much|many|do|we|have|check|find|lookup|show|in|stock|inventory|price|cost|of|for|a|an|any|item|items|product|products)\b/gi, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+          const searchRes = await executeTool('lookup_product', { query: cleanQuery || message }, req.user);
+          if (searchRes.products?.length > 0) {
+            toolSummary = `🔍 Live Database Match: ${searchRes.products.map(p => p.name).join(', ')}`;
+            res.write(`data: ${JSON.stringify({ type: 'tool', summary: toolSummary })}\n\n`);
+            toolContextText = `VERIFIED LIVE WAREHOUSE INVENTORY FACTS:\n` +
+              searchRes.products.map(p =>
+                `• Product: "${p.name}" (SKU: ${p.sku}) | Unit Price: ₹${parseFloat(p.unit_price || p.price || 0).toLocaleString('en-IN')} | Stock Available: ${p.quantity ?? p.stock} ${p.unit || 'pcs'} | Category: ${p.category} | Reorder Threshold: ${p.reorder_level || 10}`
             ).join('\n') +
-            `\nINSTRUCTION: Confirm availability directly: "Yes, we have ${searchRes.products[0].name} (SKU: ${searchRes.products[0].sku}) with ${searchRes.products[0].quantity ?? searchRes.products[0].stock} units in stock at ₹${parseFloat(searchRes.products[0].unit_price || searchRes.products[0].price || 0).toLocaleString('en-IN')}." Do not ask clarifying questions or write code.`;
+  `\nINSTRUCTION: Confirm availability directly: "Yes, we have ${searchRes.products[0].name} (SKU: ${searchRes.products[0].sku}) with ${searchRes.products[0].quantity ?? searchRes.products[0].stock} units in stock at ₹${parseFloat(searchRes.products[0].unit_price || searchRes.products[0].price || 0).toLocaleString('en-IN')}." Do not ask clarifying questions or write code.`;
         } else {
-          // RAG Semantic Discovery Fallback
-          try {
-            const ragRetriever = await getInventoryRetriever(tenantId, { limit: 3 });
-            const ragDocs = await ragRetriever.invoke(cleanQuery || message);
-            if (ragDocs && ragDocs.length > 0) {
-              toolSummary = `🧠 Semantic Discovery (RAG): ${ragDocs.map(d => d.metadata?.name || 'Product').join(', ')}`;
-              res.write(`data: ${JSON.stringify({ type: 'tool', summary: toolSummary })}\n\n`);
-              toolContextText = `VERIFIED LIVE CATALOG MATCHES (VIA SEMANTIC RAG DISCOVERY):\n` +
-                ragDocs.map(d => `• Product: "${d.metadata?.name}" (SKU: ${d.metadata?.sku}) | Price: ₹${parseFloat(d.metadata?.unit_price || 0).toLocaleString('en-IN')} | Stock: ${d.metadata?.quantity || 0} ${d.metadata?.unit || 'pcs'} | Category: ${d.metadata?.category}`).join('\n') +
-                `\nINSTRUCTION: Confirm available products directly from the verified facts above.`;
-            } else if (cleanQuery.length > 2) {
-              toolSummary = `🔍 Inventory Catalog Lookup`;
-              res.write(`data: ${JSON.stringify({ type: 'tool', summary: toolSummary })}\n\n`);
-              toolContextText = `VERIFIED CATALOG RESULT:\n` +
-                `• No products matching "${cleanQuery}" were found in your organization's inventory catalog.\n` +
-                `• Clearly inform the user that this item was not found in their inventory. Never invent prices or quantities.`;
-            }
-          } catch (_) {
-            if (cleanQuery.length > 2) {
-              toolSummary = `🔍 Inventory Catalog Lookup`;
-              res.write(`data: ${JSON.stringify({ type: 'tool', summary: toolSummary })}\n\n`);
-              toolContextText = `VERIFIED CATALOG RESULT:\n` +
-                `• No products matching "${cleanQuery}" were found in your organization's inventory catalog.\n` +
-                `• Clearly inform the user that this item was not found in their inventory. Never invent prices or quantities.`;
-            }
-          }
-        }
+  // RAG Semantic Discovery Fallback
+  try {
+    const ragRetriever = await getInventoryRetriever(tenantId, { limit: 3 });
+    const ragDocs = await ragRetriever.invoke(cleanQuery || message);
+    if (ragDocs && ragDocs.length > 0) {
+      toolSummary = `🧠 Semantic Discovery (RAG): ${ragDocs.map(d => d.metadata?.name || 'Product').join(', ')}`;
+      res.write(`data: ${JSON.stringify({ type: 'tool', summary: toolSummary })}\n\n`);
+      toolContextText = `VERIFIED LIVE CATALOG MATCHES (VIA SEMANTIC RAG DISCOVERY):\n` +
+        ragDocs.map(d => `• Product: "${d.metadata?.name}" (SKU: ${d.metadata?.sku}) | Price: ₹${parseFloat(d.metadata?.unit_price || 0).toLocaleString('en-IN')} | Stock: ${d.metadata?.quantity || 0} ${d.metadata?.unit || 'pcs'} | Category: ${d.metadata?.category}`).join('\n') +
+        `\nINSTRUCTION: Confirm available products directly from the verified facts above.`;
+    } else if (cleanQuery.length > 2) {
+      toolSummary = `🔍 Inventory Catalog Lookup`;
+      res.write(`data: ${JSON.stringify({ type: 'tool', summary: toolSummary })}\n\n`);
+      toolContextText = `VERIFIED CATALOG RESULT:\n` +
+        `• No products matching "${cleanQuery}" were found in your organization's inventory catalog.\n` +
+        `• Clearly inform the user that this item was not found in their inventory. Never invent prices or quantities.`;
+    }
+  } catch (_) {
+    if (cleanQuery.length > 2) {
+      toolSummary = `🔍 Inventory Catalog Lookup`;
+      res.write(`data: ${JSON.stringify({ type: 'tool', summary: toolSummary })}\n\n`);
+      toolContextText = `VERIFIED CATALOG RESULT:\n` +
+        `• No products matching "${cleanQuery}" were found in your organization's inventory catalog.\n` +
+        `• Clearly inform the user that this item was not found in their inventory. Never invent prices or quantities.`;
+    }
+  }
+}
       } else if (/sales|revenue|order|customer|income|earn/i.test(lower)) {
-        const salesRes = await executeTool('get_sales_summary', {}, req.user);
-        toolSummary = `📊 Live Sales Data`;
-        res.write(`data: ${JSON.stringify({ type: 'tool', summary: toolSummary })}\n\n`);
-        if (salesRes.error) {
-          toolContextText = `ACCESS RESTRICTION:\n• ${salesRes.error}`;
-        } else {
-          toolContextText = `LIVE SALES METRICS:\n` +
-            `• Monthly Revenue: ${salesRes.monthly_revenue_formatted}\n` +
-            `• Total Orders: ${salesRes.order_count}`;
-        }
-      }
+  const salesRes = await executeTool('get_sales_summary', {}, req.user);
+  toolSummary = `📊 Live Sales Data`;
+  res.write(`data: ${JSON.stringify({ type: 'tool', summary: toolSummary })}\n\n`);
+  if (salesRes.error) {
+    toolContextText = `ACCESS RESTRICTION:\n• ${salesRes.error}`;
+  } else {
+    toolContextText = `LIVE SALES METRICS:\n` +
+      `• Monthly Revenue: ${salesRes.monthly_revenue_formatted}\n` +
+      `• Total Orders: ${salesRes.order_count}`;
+  }
+}
     }
 
-    // 2. Setup LangChain Streaming Pipeline using .pipe()
-    const { ChatPromptTemplate } = await import('@langchain/core/prompts');
-    const { StringOutputParser } = await import('@langchain/core/output_parsers');
-    const chatModel = await getChatModel();
+// 2. Setup LangChain Streaming Pipeline using .pipe()
+const { ChatPromptTemplate } = await import('@langchain/core/prompts');
+const { StringOutputParser } = await import('@langchain/core/output_parsers');
+const chatModel = await getChatModel();
 
-    const systemPrompt = `You are MeriBot, an expert executive AI assistant for Meridian ERP.
+const systemPrompt = `You are MeriBot, an expert executive AI assistant for Meridian ERP.
 Meridian ERP manages enterprise inventory, sales orders, customers, suppliers, and financial operations.
 Current user: {user_name} ({user_role}). Organization Tenant: {tenant_id}.
 
@@ -631,149 +631,149 @@ CRITICAL RULES FOR ACCURACY AND PROFESSIONALISM:
 7. Present all monetary figures in Indian Rupees (₹) with clean formatting.
 8. Keep answers concise, direct, and professional.`;
 
-    // Helper to escape braces in user/assistant history turns for ChatPromptTemplate
-    const escapeBraces = (str) => (str || '').replace(/\{/g, '{{').replace(/\}/g, '}}');
+// Helper to escape braces in user/assistant history turns for ChatPromptTemplate
+const escapeBraces = (str) => (str || '').replace(/\{/g, '{{').replace(/\}/g, '}}');
 
-    // Build message array for LangChain prompt
-    const promptMessages = [
-      ['system', systemPrompt]
-    ];
+// Build message array for LangChain prompt
+const promptMessages = [
+  ['system', systemPrompt]
+];
 
-    // Include recent conversational turns (last 4)
-    if (Array.isArray(context)) {
-      for (const m of context.slice(-4)) {
-        if (m.role === 'assistant') {
-          promptMessages.push(['assistant', escapeBraces(m.content)]);
-        } else if (m.role === 'user') {
-          promptMessages.push(['human', escapeBraces(m.content)]);
-        }
-      }
+// Include recent conversational turns (last 4)
+if (Array.isArray(context)) {
+  for (const m of context.slice(-4)) {
+    if (m.role === 'assistant') {
+      promptMessages.push(['assistant', escapeBraces(m.content)]);
+    } else if (m.role === 'user') {
+      promptMessages.push(['human', escapeBraces(m.content)]);
     }
+  }
+}
 
-    promptMessages.push(['human', '{question}']);
+promptMessages.push(['human', '{question}']);
 
-    const prompt = ChatPromptTemplate.fromMessages(promptMessages);
+const prompt = ChatPromptTemplate.fromMessages(promptMessages);
 
-    // LangChain LCEL Pipeline: Prompt -> ChatOllama -> StringOutputParser using .pipe()
-    const stringChain = prompt.pipe(chatModel).pipe(new StringOutputParser());
+// LangChain LCEL Pipeline: Prompt -> ChatOllama -> StringOutputParser using .pipe()
+const stringChain = prompt.pipe(chatModel).pipe(new StringOutputParser());
 
-    // 3. Stream chunks live via chain.stream() with smart database fallback
-    let streamSucceeded = false;
+// 3. Stream chunks live via chain.stream() with smart database fallback
+let streamSucceeded = false;
 
-    try {
-      const stream = await stringChain.stream({
-        question: message,
-        database_context: toolContextText ? `DATABASE CONTEXT:\n${toolContextText}` : '',
-        user_name: userName,
-        user_role: userRole,
-        tenant_id: tenantId.substring(0, 8)
-      });
+try {
+  const stream = await stringChain.stream({
+    question: message,
+    database_context: toolContextText ? `DATABASE CONTEXT:\n${toolContextText}` : '',
+    user_name: userName,
+    user_role: userRole,
+    tenant_id: tenantId.substring(0, 8)
+  });
 
-      for await (const chunk of stream) {
-        if (chunk) {
-          streamSucceeded = true;
-          res.write(`data: ${JSON.stringify({ type: 'chunk', chunk })}\n\n`);
-        }
-      }
-    } catch (streamErr) {
-      console.warn('⚠️ [LangChain] Stream LLM unavailable, streaming database answer fallback:', streamErr.message);
+  for await (const chunk of stream) {
+    if (chunk) {
+      streamSucceeded = true;
+      res.write(`data: ${JSON.stringify({ type: 'chunk', chunk })}\n\n`);
     }
+  }
+} catch (streamErr) {
+  console.warn('⚠️ [LangChain] Stream LLM unavailable, streaming database answer fallback:', streamErr.message);
+}
 
-    if (!streamSucceeded) {
-      let directReply = '';
-      const lower = message.toLowerCase();
-      const isAggregate = /how many.*(items?|products?|units?|stock|skus?)|total.*(items?|products?|units?|inventory|count|valuation|stock)|what is our.*(inventory|count|stock)|inventory (overview|summary|count|status)|catalog (overview|summary|count)|^how many items\b|^how many products\b|^total products\b|^total items\b/i.test(lower);
-      const categories = ['electronics', 'furniture', 'office-supplies', 'it-hardware', 'raw-materials'];
-      const matchedCat = categories.find(c => lower.includes(c) || lower.includes(c.replace('-', ' ')));
+if (!streamSucceeded) {
+  let directReply = '';
+  const lower = message.toLowerCase();
+  const isAggregate = /how many.*(items?|products?|units?|stock|skus?)|total.*(items?|products?|units?|inventory|count|valuation|stock)|what is our.*(inventory|count|stock)|inventory (overview|summary|count|status)|catalog (overview|summary|count)|^how many items\b|^how many products\b|^total products\b|^total items\b/i.test(lower);
+  const categories = ['electronics', 'furniture', 'office-supplies', 'it-hardware', 'raw-materials'];
+  const matchedCat = categories.find(c => lower.includes(c) || lower.includes(c.replace('-', ' ')));
 
-      if (isAggregate || lower.includes('overview') || lower.includes('summary') || lower.includes('valuation') || lower.includes('total stock')) {
-        const overview = await executeTool('get_inventory_overview', {}, req.user);
-        directReply = `📊 **Warehouse Inventory Status**:\n\n` +
-          `• **Unique Product SKUs:** ${overview.total_products_count}\n` +
-          `• **Total Units in Stock:** ${overview.total_units_in_stock}\n` +
-          `• **Total Inventory Value:** ${overview.total_inventory_value_formatted}\n\n` +
-          (overview.products?.length > 0
-            ? `**Active Products:**\n` + overview.products.map(p => `• **${p.name}** (${p.sku}) — Stock: ${p.stock ?? p.quantity} ${p.unit || 'pcs'} @ ₹${parseFloat(p.unit_price || p.price || 0).toLocaleString('en-IN')}`).join('\n') + `\n\n`
-            : '') +
-          `Your inventory data was retrieved directly from your PostgreSQL tenant database.`;
+    if (isAggregate || lower.includes('overview') || lower.includes('summary') || lower.includes('valuation') || lower.includes('total stock')) {
+      const overview = await executeTool('get_inventory_overview', {}, req.user);
+      directReply = `📊 **Warehouse Inventory Status**:\n\n` +
+        `• **Unique Product SKUs:** ${overview.total_products_count}\n` +
+        `• **Total Units in Stock:** ${overview.total_units_in_stock}\n` +
+        `• **Total Inventory Value:** ${overview.total_inventory_value_formatted}\n\n` +
+        (overview.products?.length > 0
+          ? `**Active Products:**\n` + overview.products.map(p => `• **${p.name}** (${p.sku}) — Stock: ${p.stock ?? p.quantity} ${p.unit || 'pcs'} @ ₹${parseFloat(p.unit_price || p.price || 0).toLocaleString('en-IN')}`).join('\n') + `\n\n`
+          : '') +
+        `Your inventory data was retrieved directly from your PostgreSQL tenant database.`;
+      toolSummary = '⚡ Direct PostgreSQL Tenant Query';
+    } else if (/create|add|suggest|recommend|what next|next item|new item|what should/i.test(lower)) {
+      const overview = await executeTool('get_inventory_overview', {}, req.user);
+      const existingNames = overview.products?.map(p => p.name).join(', ') || 'existing products';
+      directReply = `💡 **Recommended Products to Create**:\n\n` +
+        `Based on your current catalog (${existingNames}), here are top additions to expand your inventory:\n\n` +
+        `1. **Laptop Sleeve & Protective Cases** (IT Accessories) — High-demand companion for Dell laptops.\n` +
+        `2. **USB-C Multiport Docking Station** (Electronics) — Essential for workstation setups.\n` +
+        `3. **Wireless Ergonomic Mouse & Keyboard Combo** (IT Hardware) — Fast-moving office IT equipment.\n\n` +
+        `You can create these items anytime via the **Inventory** module.`;
+      toolSummary = '💡 Strategic Inventory Guidance';
+    } else if (matchedCat) {
+      const catRes = await query(
+        'SELECT name, sku, quantity, unit_price, unit FROM products WHERE category = $1 AND tenant_id = $2 AND is_active = true',
+        [matchedCat, tenantId]
+      );
+      if (catRes.rows.length > 0) {
+        directReply = `📦 **${matchedCat.toUpperCase()} Products in Inventory**:\n\n` +
+          catRes.rows.map(p => `• **${p.name}** (${p.sku}) — Stock: ${p.quantity} ${p.unit || 'pcs'} @ ₹${parseFloat(p.unit_price).toLocaleString('en-IN')}`).join('\n');
+      } else {
+        directReply = `ℹ️ No products currently found under category **${matchedCat}** in your inventory.`;
+      }
+      toolSummary = '⚡ Direct PostgreSQL Tenant Query';
+    } else if (lower.includes('low stock') || lower.includes('reorder')) {
+      const stockData = await executeTool('check_low_stock', {}, req.user);
+      const lowItems = stockData.items || stockData.low_stock_products || [];
+      if (lowItems.length > 0) {
+        directReply = `⚠️ **Low Stock Alert**: You have ${lowItems.length} product(s) needing replenishment:\n\n` +
+          lowItems.map(p => `• **${p.name}** (${p.sku}): ${p.quantity ?? p.current_stock} units remaining (Threshold: ${p.reorder_level ?? p.reorder_threshold})`).join('\n');
+      } else {
+        directReply = '✅ **Inventory Healthy**: All product quantities are currently above their reorder thresholds.';
+      }
+      toolSummary = '⚡ Direct PostgreSQL Tenant Query';
+    } else if (lower.includes('sales') || lower.includes('revenue') || lower.includes('order')) {
+      const salesData = await executeTool('get_sales_summary', {}, req.user);
+      if (salesRes?.error || salesData.error) {
+        directReply = `🔒 ${salesData.error || 'Access Denied to sales financial records.'}`;
+      } else {
+        directReply = `📈 **Sales Performance**: Monthly revenue is **${salesData.monthly_revenue_formatted}** across **${salesData.order_count}** orders.`;
+      }
+      toolSummary = '⚡ Direct PostgreSQL Tenant Query';
+    } else {
+      const cleanQuery = message
+        .replace(/[?!.,;:'"()><]/g, ' ')
+        .replace(/\b(what|is|are|the|our|tell|me|about|how|much|many|do|we|have|check|find|lookup|show|in|stock|inventory|price|cost|of|for|a|an|any|item|items|product|products)\b/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      const lookup = await executeTool('lookup_product', { query: cleanQuery || message }, req.user);
+      if (lookup.products?.length > 0) {
+        directReply = `🔍 **Matching Products**:\n\n` +
+          lookup.products.map(p => `• **${p.name}** (${p.sku}) — Stock: ${p.stock ?? p.quantity} ${p.unit || 'pcs'} @ ₹${parseFloat(p.unit_price || p.price).toLocaleString('en-IN')}`).join('\n');
         toolSummary = '⚡ Direct PostgreSQL Tenant Query';
-      } else if (/create|add|suggest|recommend|what next|next item|new item|what should/i.test(lower)) {
-        const overview = await executeTool('get_inventory_overview', {}, req.user);
-        const existingNames = overview.products?.map(p => p.name).join(', ') || 'existing products';
-        directReply = `💡 **Recommended Products to Create**:\n\n` +
-          `Based on your current catalog (${existingNames}), here are top additions to expand your inventory:\n\n` +
-          `1. **Laptop Sleeve & Protective Cases** (IT Accessories) — High-demand companion for Dell laptops.\n` +
-          `2. **USB-C Multiport Docking Station** (Electronics) — Essential for workstation setups.\n` +
-          `3. **Wireless Ergonomic Mouse & Keyboard Combo** (IT Hardware) — Fast-moving office IT equipment.\n\n` +
-          `You can create these items anytime via the **Inventory** module.`;
-        toolSummary = '💡 Strategic Inventory Guidance';
-      } else if (matchedCat) {
-        const catRes = await query(
-          'SELECT name, sku, quantity, unit_price, unit FROM products WHERE category = $1 AND tenant_id = $2 AND is_active = true',
-          [matchedCat, tenantId]
-        );
-        if (catRes.rows.length > 0) {
-          directReply = `📦 **${matchedCat.toUpperCase()} Products in Inventory**:\n\n` +
-            catRes.rows.map(p => `• **${p.name}** (${p.sku}) — Stock: ${p.quantity} ${p.unit || 'pcs'} @ ₹${parseFloat(p.unit_price).toLocaleString('en-IN')}`).join('\n');
-        } else {
-          directReply = `ℹ️ No products currently found under category **${matchedCat}** in your inventory.`;
-        }
-        toolSummary = '⚡ Direct PostgreSQL Tenant Query';
-      } else if (lower.includes('low stock') || lower.includes('reorder')) {
-        const stockData = await executeTool('check_low_stock', {}, req.user);
-        const lowItems = stockData.items || stockData.low_stock_products || [];
-        if (lowItems.length > 0) {
-          directReply = `⚠️ **Low Stock Alert**: You have ${lowItems.length} product(s) needing replenishment:\n\n` +
-            lowItems.map(p => `• **${p.name}** (${p.sku}): ${p.quantity ?? p.current_stock} units remaining (Threshold: ${p.reorder_level ?? p.reorder_threshold})`).join('\n');
-        } else {
-          directReply = '✅ **Inventory Healthy**: All product quantities are currently above their reorder thresholds.';
-        }
-        toolSummary = '⚡ Direct PostgreSQL Tenant Query';
-      } else if (lower.includes('sales') || lower.includes('revenue') || lower.includes('order')) {
-        const salesData = await executeTool('get_sales_summary', {}, req.user);
-        if (salesRes?.error || salesData.error) {
-          directReply = `🔒 ${salesData.error || 'Access Denied to sales financial records.'}`;
-        } else {
-          directReply = `📈 **Sales Performance**: Monthly revenue is **${salesData.monthly_revenue_formatted}** across **${salesData.order_count}** orders.`;
-        }
+      } else if (cleanQuery.length > 2) {
+        directReply = `ℹ️ I could not find any item matching "${cleanQuery}" in your organization's inventory catalog.`;
         toolSummary = '⚡ Direct PostgreSQL Tenant Query';
       } else {
-        const cleanQuery = message
-          .replace(/[?!.,;:'"()><]/g, ' ')
-          .replace(/\b(what|is|are|the|our|tell|me|about|how|much|many|do|we|have|check|find|lookup|show|in|stock|inventory|price|cost|of|for|a|an|any|item|items|product|products)\b/gi, ' ')
-          .replace(/\s+/g, ' ')
-          .trim();
-
-        const lookup = await executeTool('lookup_product', { query: cleanQuery || message }, req.user);
-        if (lookup.products?.length > 0) {
-          directReply = `🔍 **Matching Products**:\n\n` +
-            lookup.products.map(p => `• **${p.name}** (${p.sku}) — Stock: ${p.stock ?? p.quantity} ${p.unit || 'pcs'} @ ₹${parseFloat(p.unit_price || p.price).toLocaleString('en-IN')}`).join('\n');
-          toolSummary = '⚡ Direct PostgreSQL Tenant Query';
-        } else if (cleanQuery.length > 2) {
-          directReply = `ℹ️ I could not find any item matching "${cleanQuery}" in your organization's inventory catalog.`;
-          toolSummary = '⚡ Direct PostgreSQL Tenant Query';
-        } else {
-          directReply = `Hello ${userName}! I am MeriBot, your AI Assistant for Meridian ERP. Ask me about stock levels, category listings (e.g. "electronics items"), sales metrics, or inventory overview.`;
-          toolSummary = '⚡ Meridian ERP System';
-        }
+        directReply = `Hello ${userName}! I am MeriBot, your AI Assistant for Meridian ERP. Ask me about stock levels, category listings (e.g. "electronics items"), sales metrics, or inventory overview.`;
+        toolSummary = '⚡ Meridian ERP System';
       }
-
-      res.write(`data: ${JSON.stringify({ type: 'chunk', chunk: directReply })}\n\n`);
     }
 
-    const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-    const note = toolSummary
-      ? `${toolSummary} • Streamed in ${duration}s via LangChain .pipe() & .stream() (${activeProvider}: ${activeModel})`
+    res.write(`data: ${JSON.stringify({ type: 'chunk', chunk: directReply })}\n\n`);
+  }
+
+  const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+  const note = toolSummary
+      ?`${toolSummary} • Streamed in ${duration}s via LangChain .pipe() & .stream() (${activeProvider}: ${activeModel})`
       : `⚡ Streamed live via LangChain .pipe() & .stream() in ${duration}s (${activeProvider}: ${activeModel})`;
 
-    res.write(`data: ${JSON.stringify({ type: 'done', note, duration, provider: activeProvider, model: activeModel })}\n\n`);
-    res.write('data: [DONE]\n\n');
-    res.end();
-  } catch (err) {
-    console.error('LangChain stream-chat error:', err);
-    res.write(`data: ${JSON.stringify({ type: 'error', message: err.message || 'Streaming failed' })}\n\n`);
-    res.end();
-  }
+  res.write(`data: ${JSON.stringify({ type: 'done', note, duration, provider: activeProvider, model: activeModel })}\n\n`);
+  res.write('data: [DONE]\n\n');
+  res.end();
+} catch (err) {
+  console.error('LangChain stream-chat error:', err);
+  res.write(`data: ${JSON.stringify({ type: 'error', message: err.message || 'Streaming failed' })}\n\n`);
+  res.end();
+}
 });
 
 // ============================================================
@@ -1045,35 +1045,35 @@ router.get('/langchain/audit', verifyToken, async (req, res) => {
         success: true,
         data: {
           database_metrics: databaseMetrics,
-        ai_insights: {
-          inventory_status: 'Healthy',
-          summary: 'No active products found in warehouse inventory.',
-          recommendations: ['Add products to your catalog to generate AI inventory insights.']
-        }
-      },
+          ai_insights: {
+            inventory_status: 'Healthy',
+            summary: 'No active products found in warehouse inventory.',
+            recommendations: ['Add products to your catalog to generate AI inventory insights.']
+          }
+        },
         engine: 'LangChain withStructuredOutput (Zod Schema + llama3.2:1b)'
       });
     }
 
-const inventoryText = productsRes.rows
-  .map(p => `- ${p.name} (SKU: ${p.sku}): ${p.quantity} units in stock at ₹${p.unit_price}/unit (Reorder threshold: ${p.reorder_level})`)
-  .join('\n');
+    const inventoryText = productsRes.rows
+      .map(p => `- ${p.name} (SKU: ${p.sku}): ${p.quantity} units in stock at ₹${p.unit_price}/unit (Reorder threshold: ${p.reorder_level})`)
+      .join('\n');
 
-// 2. Generate Zod-validated Structured Output via ChatOllama withStructuredOutput()
-const aiInsights = await generateStructuredInventoryInsights(inventoryText);
+    // 2. Generate Zod-validated Structured Output via ChatOllama withStructuredOutput()
+    const aiInsights = await generateStructuredInventoryInsights(inventoryText);
 
-res.json({
-  success: true,
+    res.json({
+      success: true,
       data: {
-    database_metrics: databaseMetrics,
-    ai_insights: aiInsights
-  },
-  engine: 'LangChain withStructuredOutput (Zod Schema + llama3.2:1b)'
-});
+        database_metrics: databaseMetrics,
+        ai_insights: aiInsights
+      },
+      engine: 'LangChain withStructuredOutput (Zod Schema + llama3.2:1b)'
+    });
   } catch (error) {
-  console.error('LangChain structured audit error:', error);
-  res.status(500).json({ success: false, message: 'LangChain audit failed', error: error.message });
-}
+    console.error('LangChain structured audit error:', error);
+    res.status(500).json({ success: false, message: 'LangChain audit failed', error: error.message });
+  }
 });
 
 // ============================================================

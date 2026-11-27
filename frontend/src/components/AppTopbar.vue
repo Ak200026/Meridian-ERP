@@ -1,7 +1,7 @@
 <template>
   <header class="topbar">
     <div class="topbar-title">
-      <span style="color: var(--text-muted); font-size: 13px; font-weight: 500">Bizosuite</span>
+      <span style="color: var(--text-muted); font-size: 13px; font-weight: 500">Meridian</span>
       <span style="color: var(--border); font-size: 12px">/</span>
       <span>{{ pageTitle }}</span>
     </div>

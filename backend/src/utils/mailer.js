@@ -76,16 +76,16 @@ const getTransporter = async () => {
  */
 const sendWelcomeCredentialsEmail = async ({ to, name, email, companyName }) => {
   const loginUrl = process.env.FRONTEND_URL || 'http://localhost:5173/login';
-  const from = process.env.SMTP_FROM || 'Bizosuite ERP <onboarding@resend.dev>';
+  const from = process.env.SMTP_FROM || 'Meridian ERP <onboarding@resend.dev>';
 
-  const subject = 'Welcome to Bizosuite ERP — Your Account Details';
+  const subject = 'Welcome to Meridian ERP — Your Account Details';
   const text = `Hello ${name},
 
-Welcome to Bizosuite ERP. Your enterprise workspace account has been created successfully.
+Welcome to Meridian ERP. Your enterprise workspace account has been created successfully.
 
 Here are your account details:
 ------------------------------------------
-Workspace / Company: ${companyName || 'Bizosuite Workspace'}
+Workspace / Company: ${companyName || 'Meridian Workspace'}
 Username / Email:    ${email}
 Login Portal:        ${loginUrl}
 ------------------------------------------
@@ -93,12 +93,12 @@ Login Portal:        ${loginUrl}
 You can sign in anytime using the password you set during registration. If you ever forget your password, you can use the "Forgot password?" option on the sign-in page.
 
 Best regards,
-The Bizosuite Team`;
+The Meridian Team`;
 
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; background: #0f172a; color: #f8fafc; border-radius: 8px;">
       <div style="border-bottom: 1px solid #1e293b; padding-bottom: 16px; margin-bottom: 20px;">
-        <h1 style="color: #6366f1; font-size: 20px; margin: 0;">Bizosuite ERP</h1>
+        <h1 style="color: #6366f1; font-size: 20px; margin: 0;">Meridian ERP</h1>
         <p style="color: #94a3b8; font-size: 13px; margin: 4px 0 0;">Enterprise Resource Planning &amp; AI Intelligence</p>
       </div>
       <p style="font-size: 14px; line-height: 1.6; color: #e2e8f0;">Hello <strong>${name}</strong>,</p>
@@ -106,7 +106,7 @@ The Bizosuite Team`;
       
       <div style="background: #1e293b; border: 1px solid #334155; border-radius: 6px; padding: 16px; margin: 20px 0;">
         <div style="font-size: 11px; font-weight: 600; color: #818cf8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Account Details</div>
-        <div style="font-size: 13px; color: #94a3b8; margin-bottom: 6px;">Workspace: <strong style="color: #f8fafc;">${companyName || 'Bizosuite Workspace'}</strong></div>
+        <div style="font-size: 13px; color: #94a3b8; margin-bottom: 6px;">Workspace: <strong style="color: #f8fafc;">${companyName || 'Meridian Workspace'}</strong></div>
         <div style="font-size: 13px; color: #94a3b8; margin-bottom: 6px;">Username: <strong style="color: #f8fafc;">${email}</strong></div>
         <div style="font-size: 12px; color: #94a3b8; margin-top: 10px; line-height: 1.4;">Use the password you created during sign-up to log in.</div>
       </div>
@@ -151,12 +151,12 @@ The Bizosuite Team`;
  */
 const sendPasswordResetEmail = async ({ to, name, resetToken }) => {
   const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/login?resetToken=${resetToken}&email=${encodeURIComponent(to)}`;
-  const from = process.env.SMTP_FROM || 'Bizosuite ERP <onboarding@resend.dev>';
+  const from = process.env.SMTP_FROM || 'Meridian ERP <onboarding@resend.dev>';
 
-  const subject = 'Bizosuite ERP — Password Reset Request';
+  const subject = 'Meridian ERP — Password Reset Request';
   const text = `Hello ${name},
 
-We received a request to reset your password for your Bizosuite ERP account.
+We received a request to reset your password for your Meridian ERP account.
 
 Use the following Reset Token:
 ${resetToken}
@@ -167,12 +167,12 @@ ${resetUrl}
 This token expires in 1 hour. If you did not request this, please ignore this email.
 
 Best regards,
-The Bizosuite Team`;
+The Meridian Team`;
 
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; background: #0f172a; color: #f8fafc; border-radius: 8px;">
       <div style="border-bottom: 1px solid #1e293b; padding-bottom: 16px; margin-bottom: 20px;">
-        <h1 style="color: #6366f1; font-size: 20px; margin: 0;">Bizosuite ERP</h1>
+        <h1 style="color: #6366f1; font-size: 20px; margin: 0;">Meridian ERP</h1>
         <p style="color: #94a3b8; font-size: 13px; margin: 4px 0 0;">Password Reset Request</p>
       </div>
       <p style="font-size: 14px; line-height: 1.6; color: #e2e8f0;">Hello <strong>${name}</strong>,</p>

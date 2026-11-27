@@ -180,7 +180,7 @@ const forgotPassword = async (req, res) => {
     // Always return success for security (prevents user enumeration)
     res.json({
       success: true,
-      message: 'If your email is registered in Bizosuite, password reset instructions have been sent to your inbox.'
+      message: 'If your email is registered in Meridian ERP, password reset instructions have been sent to your inbox.'
     });
   } catch (error) {
     console.error('Forgot password error:', error);

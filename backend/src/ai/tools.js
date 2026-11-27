@@ -128,144 +128,144 @@ function sanitizeSearchQuery(input) {
     .substring(0, 300);
 }
 
-  // ------------------------------------------------------------
-  // 🔀 HYBRID SEARCH: CONCURRENT KEYWORD + VECTOR FUSION
-  // ------------------------------------------------------------
-  /**
-   * Runs lexical keyword search and vector semantic search simultaneously,
-   * merging results with Reciprocal Rank Fusion / Weighted Scoring.
-   * Never drops semantic matches even when keyword matches exist!
-   */
-  async function performHybridProductSearch(searchTerm, tenantId = DEFAULT_TENANT_ID, limit = 5) {
-    if (!searchTerm || !searchTerm.trim()) return [];
+// ------------------------------------------------------------
+// 🔀 HYBRID SEARCH: CONCURRENT KEYWORD + VECTOR FUSION
+// ------------------------------------------------------------
+/**
+ * Runs lexical keyword search and vector semantic search simultaneously,
+ * merging results with Reciprocal Rank Fusion / Weighted Scoring.
+ * Never drops semantic matches even when keyword matches exist!
+ */
+async function performHybridProductSearch(searchTerm, tenantId = DEFAULT_TENANT_ID, limit = 5) {
+  if (!searchTerm || !searchTerm.trim()) return [];
 
-    const cleanTerm = searchTerm.trim();
-    const stemTerm = cleanTerm.endsWith('s') && cleanTerm.length > 3
-      ? cleanTerm.slice(0, -1)
-      : cleanTerm;
+  const cleanTerm = searchTerm.trim();
+  const stemTerm = cleanTerm.endsWith('s') && cleanTerm.length > 3
+    ? cleanTerm.slice(0, -1)
+    : cleanTerm;
 
-    // Run keyword and semantic queries concurrently in PostgreSQL
-    const [keywordRes, semanticResults] = await Promise.all([
-      query(
-        `SELECT id, name, sku, category, unit_price, quantity, reorder_level, unit, description
+  // Run keyword and semantic queries concurrently in PostgreSQL
+  const [keywordRes, semanticResults] = await Promise.all([
+    query(
+      `SELECT id, name, sku, category, unit_price, quantity, reorder_level, unit, description
        FROM products
        WHERE (name ILIKE $1 OR sku ILIKE $1 OR description ILIKE $1 OR name ILIKE $2 OR description ILIKE $2)
          AND is_active = true
          AND tenant_id = $3
        LIMIT $4`,
-        [`%${cleanTerm}%`, `%${stemTerm}%`, tenantId, limit]
-      ),
-      inDatabaseSemanticSearch(cleanTerm, { limit, tenantId, minSimilarity: 0.38 })
-    ]);
+      [`%${cleanTerm}%`, `%${stemTerm}%`, tenantId, limit]
+    ),
+    inDatabaseSemanticSearch(cleanTerm, { limit, tenantId, minSimilarity: 0.38 })
+  ]);
 
-    const map = new Map();
+  const map = new Map();
 
-    // 1. Process keyword matches
-    keywordRes.rows.forEach(p => {
+  // 1. Process keyword matches
+  keywordRes.rows.forEach(p => {
+    map.set(p.id, {
+      id: p.id,
+      name: p.name,
+      sku: p.sku,
+      category: p.category,
+      price: `₹${p.unit_price}`,
+      stock: p.quantity,
+      unit: p.unit || 'pcs',
+      is_low_stock: p.quantity <= (p.reorder_level || 10),
+      matchType: 'keyword',
+      score: 1.0,
+      matchPercentage: 90
+    });
+  });
+
+  // 2. Merge semantic matches (Dual Match Fusion)
+  semanticResults.forEach(p => {
+    const simPercentage = p.matchPercentage;
+    if (map.has(p.id)) {
+      // Matched BOTH keyword AND semantic meaning!
+      const existing = map.get(p.id);
+      existing.matchType = 'hybrid_both';
+      existing.score = 1.0 + (p.similarity || 0); // Boost dual hits
+      existing.matchPercentage = Math.min(100, Math.round(90 + (simPercentage * 0.1)));
+      existing.match_confidence = `${existing.matchPercentage}% (Exact Keyword + Conceptual Match)`;
+    } else {
+      // Pure semantic discovery
       map.set(p.id, {
         id: p.id,
         name: p.name,
         sku: p.sku,
         category: p.category,
-        price: `₹${p.unit_price}`,
-        stock: p.quantity,
-        unit: p.unit || 'pcs',
-        is_low_stock: p.quantity <= (p.reorder_level || 10),
-        matchType: 'keyword',
-        score: 1.0,
-        matchPercentage: 90
+        price: `₹${p.price}`,
+        stock: p.stock,
+        unit: 'pcs',
+        is_low_stock: p.stock <= 10,
+        matchType: 'semantic',
+        score: p.similarity || 0.5,
+        matchPercentage: simPercentage,
+        match_confidence: `${simPercentage}% (AI Semantic Match)`
       });
-    });
+    }
+  });
 
-    // 2. Merge semantic matches (Dual Match Fusion)
-    semanticResults.forEach(p => {
-      const simPercentage = p.matchPercentage;
-      if (map.has(p.id)) {
-        // Matched BOTH keyword AND semantic meaning!
-        const existing = map.get(p.id);
-        existing.matchType = 'hybrid_both';
-        existing.score = 1.0 + (p.similarity || 0); // Boost dual hits
-        existing.matchPercentage = Math.min(100, Math.round(90 + (simPercentage * 0.1)));
-        existing.match_confidence = `${existing.matchPercentage}% (Exact Keyword + Conceptual Match)`;
-      } else {
-        // Pure semantic discovery
-        map.set(p.id, {
-          id: p.id,
-          name: p.name,
-          sku: p.sku,
-          category: p.category,
-          price: `₹${p.price}`,
-          stock: p.stock,
-          unit: 'pcs',
-          is_low_stock: p.stock <= 10,
-          matchType: 'semantic',
-          score: p.similarity || 0.5,
-          matchPercentage: simPercentage,
-          match_confidence: `${simPercentage}% (AI Semantic Match)`
-        });
-      }
-    });
+  // 3. Sort by fused score
+  const sorted = Array.from(map.values()).sort((a, b) => b.score - a.score);
+  return sorted.slice(0, limit);
+}
 
-    // 3. Sort by fused score
-    const sorted = Array.from(map.values()).sort((a, b) => b.score - a.score);
-    return sorted.slice(0, limit);
-  }
+// ------------------------------------------------------------
+// 2. TOOL EXECUTION DISPATCHER (With RBAC & Multi-Tenancy)
+// ------------------------------------------------------------
+/**
+ * Executes an AI tool with strict tenant isolation and role permissions.
+ * @param {string} name - Tool function name.
+ * @param {object} rawArgs - Tool arguments.
+ * @param {object} userContext - { id, role, tenant_id, email, name }
+ */
+async function executeTool(name, rawArgs, userContext = {}) {
+  const tenantId = userContext.tenant_id || DEFAULT_TENANT_ID;
+  const userRole = userContext.role || 'viewer';
 
-  // ------------------------------------------------------------
-  // 2. TOOL EXECUTION DISPATCHER (With RBAC & Multi-Tenancy)
-  // ------------------------------------------------------------
-  /**
-   * Executes an AI tool with strict tenant isolation and role permissions.
-   * @param {string} name - Tool function name.
-   * @param {object} rawArgs - Tool arguments.
-   * @param {object} userContext - { id, role, tenant_id, email, name }
-   */
-  async function executeTool(name, rawArgs, userContext = {}) {
-    const tenantId = userContext.tenant_id || DEFAULT_TENANT_ID;
-    const userRole = userContext.role || 'viewer';
+  try {
+    switch (name) {
+      case 'lookup_product': {
+        const rawSearchTerm = extractArg(rawArgs, 'query') || extractArg(rawArgs, 'name') || '';
+        const searchTerm = sanitizeSearchQuery(rawSearchTerm);
 
-    try {
-      switch (name) {
-        case 'lookup_product': {
-          const rawSearchTerm = extractArg(rawArgs, 'query') || extractArg(rawArgs, 'name') || '';
-          const searchTerm = sanitizeSearchQuery(rawSearchTerm);
-
-          if (!searchTerm) {
-            return {
-              found: false,
-              message: 'Please provide a valid product name or keyword to search.'
-            };
-          }
-
-          // Execute Hybrid Search (Keyword + In-Database Vector Semantic)
-          const products = await performHybridProductSearch(searchTerm, tenantId, 5);
-
-          if (products.length === 0) {
-            return {
-              found: false,
-              message: `No products matching "${searchTerm}" found in your organization's inventory.`
-            };
-          }
-
+        if (!searchTerm) {
           return {
-            found: true,
-            count: products.length,
-            search_type: 'hybrid_search',
-            products: products.map(p => ({
-              name: p.name,
-              sku: p.sku,
-              category: p.category,
-              price: p.price,
-              unit_price: p.unit_price || p.price,
-              stock: p.stock,
-              quantity: p.stock,
-              unit: p.unit || 'pcs',
-              is_low_stock: p.is_low_stock,
-              match_type: p.matchType,
-              match_confidence: p.match_confidence || `${p.matchPercentage}% match`
-            }))
+            found: false,
+            message: 'Please provide a valid product name or keyword to search.'
           };
         }
+
+        // Execute Hybrid Search (Keyword + In-Database Vector Semantic)
+        const products = await performHybridProductSearch(searchTerm, tenantId, 5);
+
+        if (products.length === 0) {
+          return {
+            found: false,
+            message: `No products matching "${searchTerm}" found in your organization's inventory.`
+          };
+        }
+
+        return {
+          found: true,
+          count: products.length,
+          search_type: 'hybrid_search',
+          products: products.map(p => ({
+            name: p.name,
+            sku: p.sku,
+            category: p.category,
+            price: p.price,
+            unit_price: p.unit_price || p.price,
+            stock: p.stock,
+            quantity: p.stock,
+            unit: p.unit || 'pcs',
+            is_low_stock: p.is_low_stock,
+            match_type: p.matchType,
+            match_confidence: p.match_confidence || `${p.matchPercentage}% match`
+          }))
+        };
+      }
 
       case 'check_low_stock': {
         const res = await query(
@@ -471,7 +471,7 @@ function sanitizeSearchQuery(input) {
       }
 
       default:
-      return { error: `Tool ${name} is not recognized.` };
+        return { error: `Tool ${name} is not recognized.` };
     }
   } catch (err) {
     console.error(`Error executing tool "${name}":`, err);
