@@ -122,7 +122,8 @@
               </svg>
             </div>
             <div class="msg-content">
-              <div class="msg-bubble" style="white-space: pre-line">{{ msg.content }}</div>
+              <div v-if="msg.role === 'assistant'" class="msg-bubble" style="white-space: pre-line" v-html="formatMarkdown(msg.content)"></div>
+              <div v-else class="msg-bubble" style="white-space: pre-line">{{ msg.content }}</div>
               <!-- Tool Execution Pill Indicator -->
               <div v-if="msg.note" class="msg-note">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0">
@@ -762,6 +763,20 @@ const scrollToBottom = async () => {
   if (messagesEl.value) {
     messagesEl.value.scrollTop = messagesEl.value.scrollHeight;
   }
+};
+
+const formatMarkdown = (text) => {
+  if (!text) return '';
+  const escaped = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+  return escaped
+    .replace(/^#{1,3}\s+(.+)$/gm, '<strong>$1</strong>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^*])\*([^*\n]+?)\*(?!\*)/g, '$1<em>$2</em>')
+    .replace(/`([^`\n]+)`/g, '<code style="background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px; font-size: 0.9em;">$1</code>');
 };
 
 const formatTime = () => new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
