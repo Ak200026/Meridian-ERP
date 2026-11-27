@@ -447,6 +447,9 @@ router.post('/stream-chat', verifyToken, async (req, res) => {
             res.write(`data: ${JSON.stringify({ type: 'tool', summary: toolSummary })}\n\n`);
             toolContextText = formatToolResultsAsFacts(toolResults);
           }
+        } else {
+          const errData = await groqCheckRes.text().catch(() => '');
+          console.warn(`⚠️ [Groq Cloud] Tool check HTTP ${groqCheckRes.status}:`, errData);
         }
       } catch (groqToolErr) {
         console.warn('Groq tool check error:', groqToolErr.message);
@@ -676,7 +679,7 @@ try {
     }
   }
 } catch (streamErr) {
-  console.warn('⚠️ [LangChain] Stream LLM unavailable, streaming database answer fallback:', streamErr.message);
+  console.warn(`⚠️ [LangChain Stream Error - Provider: ${activeProvider}]:`, streamErr.message);
 }
 
 if (!streamSucceeded) {
