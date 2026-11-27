@@ -17,11 +17,12 @@ async function getChatModel() {
 
   try {
     // 1. Cloud Production: Groq (100% Free, ultra-fast 300+ tok/s)
-    if (process.env.GROQ_API_KEY) {
+    const groqKey = process.env.GROQ_API_KEY?.trim();
+    if (groqKey) {
       const { ChatGroq } = await import('@langchain/groq');
-      const model = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+      const model = (process.env.GROQ_MODEL || 'llama-3.3-70b-versatile').trim();
       chatModelInstance = new ChatGroq({
-        apiKey: process.env.GROQ_API_KEY,
+        apiKey: groqKey,
         model: model,
         temperature: 0.3
       });

@@ -389,13 +389,14 @@ router.post('/stream-chat', verifyToken, async (req, res) => {
     let toolContextText = '';
     let toolSummary = null;
 
-    if (process.env.GROQ_API_KEY) {
+    const groqApiKey = process.env.GROQ_API_KEY?.trim();
+    if (groqApiKey) {
       try {
-        const groqModel = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+        const groqModel = (process.env.GROQ_MODEL || 'llama-3.3-70b-versatile').trim();
         const groqCheckRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+            'Authorization': `Bearer ${groqApiKey}`,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -410,7 +411,7 @@ router.post('/stream-chat', verifyToken, async (req, res) => {
             tools,
             temperature: 0.1
           }),
-          signal: AbortSignal.timeout(3000)
+          signal: AbortSignal.timeout(6000)
         });
 
         if (groqCheckRes.ok) {
@@ -662,6 +663,7 @@ const stringChain = prompt.pipe(chatModel).pipe(new StringOutputParser());
 
 // 3. Stream chunks live via chain.stream() with smart database fallback
 let streamSucceeded = false;
+let streamErrorReason = null;
 
 try {
   const stream = await stringChain.stream({
@@ -679,7 +681,8 @@ try {
     }
   }
 } catch (streamErr) {
-  console.warn(`⚠️ [LangChain Stream Error - Provider: ${activeProvider}]:`, streamErr.message);
+  streamErrorReason = streamErr.message || 'Stream error';
+  console.error(`⚠️ [LangChain Stream Error - Provider: ${activeProvider}]:`, streamErrorReason);
 }
 
 if (!streamSucceeded) {
@@ -774,9 +777,21 @@ if (!streamSucceeded) {
   }
 
   const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+  let fallbackHint = '';
+  if (!streamSucceeded && streamErrorReason) {
+    if (/401|invalid.?api.?key|unauthorized/i.test(streamErrorReason)) {
+      fallbackHint = ' [Fallback: Invalid API Key]';
+    } else if (/429|rate.?limit/i.test(streamErrorReason)) {
+      fallbackHint = ' [Fallback: Rate Limit]';
+    } else if (/timeout|aborted/i.test(streamErrorReason)) {
+      fallbackHint = ' [Fallback: Provider Timeout]';
+    } else {
+      fallbackHint = ` [Fallback: ${streamErrorReason.replace(/gsk_[A-Za-z0-9_]+/g, 'gsk_***').slice(0, 60)}]`;
+    }
+  }
   const note = toolSummary
-      ?`${toolSummary} • Streamed in ${duration}s via LangChain .pipe() & .stream() (${activeProvider}: ${activeModel})`
-      : `⚡ Streamed live via LangChain .pipe() & .stream() in ${duration}s (${activeProvider}: ${activeModel})`;
+      ? `${toolSummary} • Streamed in ${duration}s via LangChain .pipe() & .stream() (${activeProvider}: ${activeModel})${fallbackHint}`
+      : `⚡ Streamed live via LangChain .pipe() & .stream() in ${duration}s (${activeProvider}: ${activeModel})${fallbackHint}`;
 
   res.write(`data: ${JSON.stringify({ type: 'done', note, duration, provider: activeProvider, model: activeModel })}\n\n`);
   res.write('data: [DONE]\n\n');
