@@ -16,7 +16,7 @@ const {
   getEmbeddingMetrics,
   DEFAULT_TENANT_ID
 } = require('../ai/embeddings');
-const { getChatModel } = require('../ai/langchain/chatModel');
+const { getChatModel, resolveGroqModel } = require('../ai/langchain/chatModel');
 const { getInventoryRetriever } = require('../ai/langchain/retriever');
 
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434';
@@ -138,17 +138,18 @@ Instructions:
     const startTime = Date.now();
     let assistantMsg = null;
     let toolSummary = null;
-    const activeProvider = process.env.GROQ_API_KEY ? 'Groq Cloud' : 'Ollama Local';
-    const activeModel = process.env.GROQ_API_KEY ? (process.env.GROQ_MODEL || 'llama-3.1-8b-instant') : OLLAMA_MODEL;
+    const groqKey = process.env.GROQ_API_KEY?.trim();
+    const activeProvider = groqKey ? 'Groq Cloud' : 'Ollama Local';
+    const activeModel = groqKey ? await resolveGroqModel(groqKey) : OLLAMA_MODEL;
 
     // Check if Groq Cloud API Key is configured
-    if (process.env.GROQ_API_KEY) {
+    if (groqKey) {
       try {
-        const groqModel = process.env.GROQ_MODEL || 'llama-3.1-8b-instant';
+        const groqModel = activeModel;
         const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+            'Authorization': `Bearer ${groqKey}`,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -390,9 +391,11 @@ router.post('/stream-chat', verifyToken, async (req, res) => {
     let toolSummary = null;
 
     const groqApiKey = process.env.GROQ_API_KEY?.trim();
+    const activeProvider = groqApiKey ? 'Groq Cloud' : 'Ollama Local';
+    const activeModel = groqApiKey ? await resolveGroqModel(groqApiKey) : OLLAMA_MODEL;
     if (groqApiKey) {
       try {
-        const groqModel = (process.env.GROQ_MODEL || 'llama-3.1-8b-instant').trim();
+        const groqModel = activeModel;
         const groqCheckRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
           headers: {
@@ -511,9 +514,7 @@ router.post('/stream-chat', verifyToken, async (req, res) => {
       }
     }
 
-    // Provider metadata setup
-    const activeProvider = process.env.GROQ_API_KEY ? 'Groq Cloud' : 'Ollama Local';
-    const activeModel = process.env.GROQ_API_KEY ? (process.env.GROQ_MODEL || 'llama-3.1-8b-instant') : OLLAMA_MODEL;
+    // Provider metadata log
     console.log(`🤖 [MeriBot Stream] Active Provider: ${activeProvider} (${activeModel}) | User: ${userName} | Tenant: ${tenantId.substring(0, 8)}`);
 
     // Automatic Live Database Context Injection (Guarantees 0% Hallucination & Fact Grounding)
@@ -617,7 +618,7 @@ router.post('/stream-chat', verifyToken, async (req, res) => {
 // 2. Setup LangChain Streaming Pipeline using .pipe()
 const { ChatPromptTemplate } = await import('@langchain/core/prompts');
 const { StringOutputParser } = await import('@langchain/core/output_parsers');
-const chatModel = await getChatModel();
+const chatModel = await getChatModel(groqApiKey ? activeModel : null);
 
 const systemPrompt = `You are MeriBot, an expert executive AI assistant for Meridian ERP.
 Meridian ERP manages enterprise inventory, sales orders, customers, suppliers, and financial operations.
