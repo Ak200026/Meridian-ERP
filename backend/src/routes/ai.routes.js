@@ -558,7 +558,7 @@ router.post('/stream-chat', verifyToken, async (req, res) => {
           // Strip conversational phrases to isolate search keyword
           const cleanQuery = message
             .replace(/[?!.,;:'"()><]/g, ' ')
-            .replace(/\b(what|is|are|the|our|tell|me|about|how|much|many|do|we|have|check|find|lookup|show|in|stock|inventory|price|cost|of|for|a|an|any|item|items|product|products)\b/gi, ' ')
+            .replace(/\b(who|are|you|what|is|the|our|tell|me|about|how|much|many|do|we|have|check|find|lookup|show|in|stock|inventory|price|cost|of|for|a|an|any|item|items|product|products)\b/gi, ' ')
             .replace(/\s+/g, ' ')
             .trim();
 
@@ -740,10 +740,19 @@ if (!streamSucceeded) {
         directReply = `📈 **Sales Performance**: Monthly revenue is **${salesData.monthly_revenue_formatted}** across **${salesData.order_count}** orders.`;
       }
       toolSummary = '⚡ Direct PostgreSQL Tenant Query';
+    } else if (/^(who are you|what is your name|who r u|introduce yourself|what can you do|what is meridian|what are you|help|hello|hi|hey)\b/i.test(lower.trim()) || lower.includes('who are you') || lower.includes('who you')) {
+      directReply = `Hello ${userName}! I am **MeriBot**, the executive AI assistant for **Meridian ERP**.\n\n` +
+        `I can help you monitor live warehouse inventory, check product availability and stock levels, review sales and revenue metrics, and navigate ERP operations.\n\n` +
+        `Try asking:\n` +
+        `• *"How many items do we have?"*\n` +
+        `• *"What is the stock and price of Dell laptop?"*\n` +
+        `• *"Show me low stock items"*\n` +
+        `• *"What is our monthly sales revenue?"*`;
+      toolSummary = '⚡ Meridian ERP System';
     } else {
       const cleanQuery = message
         .replace(/[?!.,;:'"()><]/g, ' ')
-        .replace(/\b(what|is|are|the|our|tell|me|about|how|much|many|do|we|have|check|find|lookup|show|in|stock|inventory|price|cost|of|for|a|an|any|item|items|product|products)\b/gi, ' ')
+        .replace(/\b(who|are|you|what|is|the|our|tell|me|about|how|much|many|do|we|have|check|find|lookup|show|in|stock|inventory|price|cost|of|for|a|an|any|item|items|product|products)\b/gi, ' ')
         .replace(/\s+/g, ' ')
         .trim();
 
