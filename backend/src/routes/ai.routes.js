@@ -139,12 +139,12 @@ Instructions:
     let assistantMsg = null;
     let toolSummary = null;
     const activeProvider = process.env.GROQ_API_KEY ? 'Groq Cloud' : 'Ollama Local';
-    const activeModel = process.env.GROQ_API_KEY ? (process.env.GROQ_MODEL || 'llama-3.3-70b-versatile') : OLLAMA_MODEL;
+    const activeModel = process.env.GROQ_API_KEY ? (process.env.GROQ_MODEL || 'llama-3.1-8b-instant') : OLLAMA_MODEL;
 
     // Check if Groq Cloud API Key is configured
     if (process.env.GROQ_API_KEY) {
       try {
-        const groqModel = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+        const groqModel = process.env.GROQ_MODEL || 'llama-3.1-8b-instant';
         const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
           headers: {
@@ -392,7 +392,7 @@ router.post('/stream-chat', verifyToken, async (req, res) => {
     const groqApiKey = process.env.GROQ_API_KEY?.trim();
     if (groqApiKey) {
       try {
-        const groqModel = (process.env.GROQ_MODEL || 'llama-3.3-70b-versatile').trim();
+        const groqModel = (process.env.GROQ_MODEL || 'llama-3.1-8b-instant').trim();
         const groqCheckRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
           headers: {
@@ -513,7 +513,7 @@ router.post('/stream-chat', verifyToken, async (req, res) => {
 
     // Provider metadata setup
     const activeProvider = process.env.GROQ_API_KEY ? 'Groq Cloud' : 'Ollama Local';
-    const activeModel = process.env.GROQ_API_KEY ? (process.env.GROQ_MODEL || 'llama-3.3-70b-versatile') : OLLAMA_MODEL;
+    const activeModel = process.env.GROQ_API_KEY ? (process.env.GROQ_MODEL || 'llama-3.1-8b-instant') : OLLAMA_MODEL;
     console.log(`🤖 [MeriBot Stream] Active Provider: ${activeProvider} (${activeModel}) | User: ${userName} | Tenant: ${tenantId.substring(0, 8)}`);
 
     // Automatic Live Database Context Injection (Guarantees 0% Hallucination & Fact Grounding)

@@ -20,7 +20,7 @@ async function getChatModel() {
     const groqKey = process.env.GROQ_API_KEY?.trim();
     if (groqKey) {
       const { ChatGroq } = await import('@langchain/groq');
-      const model = (process.env.GROQ_MODEL || 'llama-3.3-70b-versatile').trim();
+      const model = (process.env.GROQ_MODEL || 'llama-3.1-8b-instant').trim();
       chatModelInstance = new ChatGroq({
         apiKey: groqKey,
         model: model,
